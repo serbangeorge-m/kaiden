@@ -325,6 +325,29 @@ test('Expect clicking terminal button does not start workspace when already runn
   expect(router.goto).toHaveBeenCalledWith('/agent-workspaces/ws-1/terminal');
 });
 
+test('Expect error dialog shown when terminal button start fails', async () => {
+  vi.mocked(window.startAgentWorkspace).mockRejectedValue(new Error('sandbox init failed'));
+
+  render(AgentWorkspaceDetails, { workspaceId: 'ws-1' });
+
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: 'Open Terminal' })).toBeInTheDocument();
+  });
+
+  const terminalButton = screen.getByRole('button', { name: 'Open Terminal' });
+  await fireEvent.click(terminalButton);
+
+  await waitFor(() => {
+    expect(window.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Agent Workspace',
+        type: 'error',
+        message: expect.stringContaining('sandbox init failed'),
+      }),
+    );
+  });
+});
+
 test('Expect error dialog shown when stop fails', async () => {
   agentWorkspaces.set([{ ...workspaceSummary, state: 'running' }]);
   vi.mocked(window.stopAgentWorkspace).mockRejectedValue(new Error('stop timeout'));

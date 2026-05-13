@@ -405,6 +405,12 @@ async function startAsIs(): Promise<void> {
     });
   } catch (err: unknown) {
     console.error('Failed to create agent workspace (as-is)', err);
+    await window.showMessageBox({
+      title: 'Agent Workspace',
+      type: 'error',
+      message: `Error while creating workspace: ${err instanceof Error ? err.message : String(err)}`,
+      buttons: ['OK'],
+    });
   }
 }
 
@@ -455,6 +461,12 @@ async function startWorkspace(): Promise<void> {
     });
   } catch (err: unknown) {
     console.error('Failed to create agent workspace', err);
+    await window.showMessageBox({
+      title: 'Agent Workspace',
+      type: 'error',
+      message: `Error while creating workspace: ${err instanceof Error ? err.message : String(err)}`,
+      buttons: ['OK'],
+    });
   }
 }
 </script>

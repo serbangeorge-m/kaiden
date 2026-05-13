@@ -76,7 +76,15 @@ async function handleStartStop(): Promise<void> {
 
 function handleTerminal(): void {
   if (!isRunning && !inProgress) {
-    startAgentWorkspace(workspaceId).catch(console.error);
+    startAgentWorkspace(workspaceId).catch(async (error: unknown) => {
+      const name = workspaceSummary?.name ?? workspaceId;
+      await window.showMessageBox({
+        title: 'Agent Workspace',
+        type: 'error',
+        message: `Error while starting workspace "${name}": ${error}`,
+        buttons: ['OK'],
+      });
+    });
   }
   router.goto(`/agent-workspaces/${encodeURIComponent(workspaceId)}/terminal`);
 }

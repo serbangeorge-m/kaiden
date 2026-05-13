@@ -1526,4 +1526,53 @@ test('Expect startWorkspace does not pass replaceConfig when configAction is mer
   );
 });
 
+test('Expect error dialog shown when createAgentWorkspace fails from use-all-defaults', async () => {
+  vi.mocked(window.createAgentWorkspace).mockRejectedValue(new Error('container runtime not available'));
+  vi.mocked(window.showMessageBox).mockResolvedValue({ response: 0 });
+
+  render(AgentWorkspaceCreate);
+
+  await fireEvent.input(screen.getByPlaceholderText('/path/to/project'), {
+    target: { value: '/home/user/my-repo' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Use all defaults and create workspace' }));
+
+  await vi.waitFor(() => {
+    expect(window.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Agent Workspace',
+        type: 'error',
+        message: expect.stringContaining('container runtime not available'),
+      }),
+    );
+  });
+});
+
+test('Expect error dialog shown when createAgentWorkspace fails from Start Workspace button', async () => {
+  vi.mocked(window.createAgentWorkspace).mockRejectedValue(new Error('sandbox init failed'));
+  vi.mocked(window.showMessageBox).mockResolvedValue({ response: 0 });
+
+  render(AgentWorkspaceCreate);
+
+  await fireEvent.input(screen.getByPlaceholderText('/path/to/project'), {
+    target: { value: '/home/user/my-repo' },
+  });
+
+  for (let i = 0; i < wizardStepCount - 1; i++) {
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+  }
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Start Workspace' }));
+
+  await vi.waitFor(() => {
+    expect(window.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Agent Workspace',
+        type: 'error',
+        message: expect.stringContaining('sandbox init failed'),
+      }),
+    );
+  });
+});
+
 const wizardStepCount = 5;
