@@ -16,10 +16,12 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+import type { FileSystemWatcher } from '@openkaiden/api';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { IPCHandle } from '/@/plugin/api.js';
 import type { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
+import type { FilesystemMonitoring } from '/@/plugin/filesystem-monitoring.js';
 import { KdnCli } from '/@/plugin/kdn-cli/kdn-cli.js';
 import type { Exec } from '/@/plugin/util/exec.js';
 import type { ApiSenderType } from '/@api/api-sender/api-sender-type.js';
@@ -52,9 +54,20 @@ const apiSender: ApiSenderType = {
 const ipcHandle: IPCHandle = vi.fn();
 const kdnCli = new KdnCli({} as Exec, {} as CliToolRegistry);
 
+const mockWatcher = {
+  onDidChange: vi.fn(),
+  onDidCreate: vi.fn(),
+  onDidDelete: vi.fn(),
+  dispose: vi.fn(),
+} as unknown as FileSystemWatcher;
+const filesystemMonitoring = {
+  createFileSystemWatcher: vi.fn().mockReturnValue(mockWatcher),
+} as unknown as FilesystemMonitoring;
+
 beforeEach(() => {
   vi.resetAllMocks();
-  manager = new SecretManager(apiSender, ipcHandle, kdnCli);
+  vi.mocked(filesystemMonitoring.createFileSystemWatcher).mockReturnValue(mockWatcher);
+  manager = new SecretManager(apiSender, ipcHandle, kdnCli, filesystemMonitoring);
   manager.init();
 });
 
@@ -69,6 +82,39 @@ describe('init', () => {
 
   test('registers IPC handler for remove', () => {
     expect(ipcHandle).toHaveBeenCalledWith('secret-manager:remove', expect.any(Function));
+  });
+});
+
+describe('watchSecretsFile', () => {
+  test('watches ~/.kdn/secrets.json on init', () => {
+    expect(filesystemMonitoring.createFileSystemWatcher).toHaveBeenCalledWith(
+      expect.stringMatching(/\.kdn[\\/]secrets\.json$/),
+    );
+  });
+
+  test('sends secret-manager-update on file change', () => {
+    const changeCallback = vi.mocked(mockWatcher.onDidChange).mock.calls[0]![0] as () => void;
+    changeCallback();
+    expect(apiSender.send).toHaveBeenCalledWith('secret-manager-update');
+  });
+
+  test('sends secret-manager-update on file create', () => {
+    const createCallback = vi.mocked(mockWatcher.onDidCreate).mock.calls[0]![0] as () => void;
+    createCallback();
+    expect(apiSender.send).toHaveBeenCalledWith('secret-manager-update');
+  });
+
+  test('sends secret-manager-update on file delete', () => {
+    const deleteCallback = vi.mocked(mockWatcher.onDidDelete).mock.calls[0]![0] as () => void;
+    deleteCallback();
+    expect(apiSender.send).toHaveBeenCalledWith('secret-manager-update');
+  });
+});
+
+describe('dispose', () => {
+  test('disposes the secrets watcher', () => {
+    manager.dispose();
+    expect(mockWatcher.dispose).toHaveBeenCalled();
   });
 });
 

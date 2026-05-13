@@ -16,18 +16,29 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { inject, injectable } from 'inversify';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+import type { Disposable, FileSystemWatcher } from '@openkaiden/api';
+import { inject, injectable, preDestroy } from 'inversify';
 
 import { IPCHandle } from '/@/plugin/api.js';
+import { FilesystemMonitoring } from '/@/plugin/filesystem-monitoring.js';
 import { KdnCli } from '/@/plugin/kdn-cli/kdn-cli.js';
 import { ApiSenderType } from '/@api/api-sender/api-sender-type.js';
 import type { SecretCreateOptions, SecretInfo, SecretName, SecretService } from '/@api/secret-info.js';
 
 /**
  * Manages secrets by delegating to the `kdn` CLI.
+ *
+ * Watches `~/.kdn/secrets.json` so that external mutations
+ * (e.g. `kdn secret remove` run from a terminal) are picked
+ * up and forwarded to the renderer.
  */
 @injectable()
-export class SecretManager {
+export class SecretManager implements Disposable {
+  private secretsWatcher: FileSystemWatcher | undefined;
+
   constructor(
     @inject(ApiSenderType)
     private readonly apiSender: ApiSenderType,
@@ -35,6 +46,8 @@ export class SecretManager {
     private readonly ipcHandle: IPCHandle,
     @inject(KdnCli)
     private readonly kdnCli: KdnCli,
+    @inject(FilesystemMonitoring)
+    private readonly filesystemMonitoring: FilesystemMonitoring,
   ) {}
 
   async create(options: SecretCreateOptions): Promise<SecretName> {
@@ -76,5 +89,24 @@ export class SecretManager {
     this.ipcHandle('secret-manager:list-services', async (): Promise<SecretService[]> => {
       return this.listServices();
     });
+
+    this.watchSecretsFile();
+  }
+
+  private watchSecretsFile(): void {
+    this.secretsWatcher?.dispose();
+    const secretsPath = join(homedir(), '.kdn', 'secrets.json');
+    this.secretsWatcher = this.filesystemMonitoring.createFileSystemWatcher(secretsPath);
+    const notify = (): void => {
+      this.apiSender.send('secret-manager-update');
+    };
+    this.secretsWatcher.onDidChange(notify);
+    this.secretsWatcher.onDidCreate(notify);
+    this.secretsWatcher.onDidDelete(notify);
+  }
+
+  @preDestroy()
+  dispose(): void {
+    this.secretsWatcher?.dispose();
   }
 }
