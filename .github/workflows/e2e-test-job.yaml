@@ -175,12 +175,12 @@ jobs:
           # dbus-run-session provides an ephemeral bus; gnome-keyring-daemon
           # creates a "login" keyring unlocked with an empty password, which
           # becomes the default collection that kdn can write secrets to.
-          # PATH is re-exported so child processes (Electron -> spawn kdn)
-          # can resolve binaries installed in /usr/local/bin.
+          # /usr/local/bin is appended (not prepended) to PATH so kdn is
+          # found without shadowing the Node 24 binary from actions/setup-node.
           if [ "$RUNNER_OS" == "Linux" ]; then
             dbus-run-session -- bash -c '
-              export PATH="/usr/local/bin:$PATH"
-              echo "" | gnome-keyring-daemon --start --components=secrets --unlock --daemonize
+              export PATH="$PATH:/usr/local/bin"
+              echo "" | gnome-keyring-daemon --components=secrets --unlock --daemonize
               dbus-send --session --print-reply --dest=org.freedesktop.secrets \
                 /org/freedesktop/secrets \
                 org.freedesktop.Secret.Service.SetAlias \
