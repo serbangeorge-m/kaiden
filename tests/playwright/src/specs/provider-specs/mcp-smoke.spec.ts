@@ -21,7 +21,7 @@ import { waitForNavigationReady } from '../../utils/app-ready';
 
 const MCP_REGISTRY_EXAMPLE = 'MCP Registry example';
 const MCP_REGISTRY_URL = 'https://registry.modelcontextprotocol.io';
-const SERVER_LIST_UPDATE_TIMEOUT = 120_000;
+const SERVER_LIST_UPDATE_TIMEOUT = 180_000;
 const SERVER_CONNECTION_TIMEOUT = 10_000;
 
 test.use({

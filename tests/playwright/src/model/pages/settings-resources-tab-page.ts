@@ -20,6 +20,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import { type ConnectionType, featuredResources, resources, TIMEOUTS } from 'src/model/core/types';
 
 import { BasePage } from './base-page';
+import { SettingsCreateClaudePage } from './settings-create-claude-page';
 import { SettingsCreateGeminiPage } from './settings-create-gemini-page';
 import { SettingsCreateMilvusPage } from './settings-create-milvus-page';
 import { SettingsCreateOpenAIPage } from './settings-create-openai-page';
@@ -51,6 +52,10 @@ export class SettingsResourcesPage extends BasePage {
 
   async openCreateOpenAIPage(): Promise<SettingsCreateOpenAIPage> {
     return this.openTab(this.getResourceCreateButton(resources.openai.displayName), SettingsCreateOpenAIPage);
+  }
+
+  async openCreateClaudePage(): Promise<SettingsCreateClaudePage> {
+    return this.openTab(this.getResourceCreateButton(resources.claude.displayName), SettingsCreateClaudePage);
   }
 
   async openCreateMilvusPage(): Promise<SettingsCreateMilvusPage> {

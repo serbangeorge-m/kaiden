@@ -86,6 +86,7 @@ export const resources = {
   openshiftai: { displayName: 'OpenShift AI', hasCreateButton: true },
   openai: { displayName: 'OpenAI', hasCreateButton: true },
   gemini: { displayName: 'Gemini', hasCreateButton: true },
+  claude: { displayName: 'Claude', hasCreateButton: true },
   ollama: { displayName: 'Ollama', hasCreateButton: false },
   ramalama: { displayName: 'RamaLama', hasCreateButton: false },
   milvus: { displayName: 'Milvus Vector Database', hasCreateButton: true },
@@ -141,6 +142,10 @@ export const PROVIDERS = {
     envVarName: 'RAMALAMA_ENABLED',
     resourceId: 'ramalama',
     autoDetected: true,
+  },
+  claude: {
+    envVarName: 'ANTHROPIC_API_KEY',
+    resourceId: 'claude',
   },
   'openshift-ai': {
     envVarName: 'OPENSHIFT_AI_TOKEN',
@@ -200,6 +205,39 @@ export const SELECTORS = {
   NAVIGATION: { role: 'navigation' as const, name: 'AppNavigation' },
 } as const;
 
+export const WORKSPACE_STATUS = {
+  RUNNING: 'running',
+  STOPPED: 'stopped',
+  STARTING: 'starting',
+  STOPPING: 'stopping',
+} as const;
+export type WorkspaceStatus = (typeof WORKSPACE_STATUS)[keyof typeof WORKSPACE_STATUS];
+
+export const NETWORK_MODE = {
+  DEVELOPER_PRESET: 'Developer Preset',
+  UNRESTRICTED: 'Unrestricted',
+  DENY_ALL: 'Deny All',
+} as const;
+export type NetworkMode = (typeof NETWORK_MODE)[keyof typeof NETWORK_MODE];
+
+export const SANDBOX_BADGE = {
+  ACTIVE: 'Sandbox Active',
+  STARTING: 'Sandbox Starting',
+  STOPPING: 'Sandbox Stopping',
+  STOPPED: 'Sandbox Stopped',
+} as const;
+
+export const FILESYSTEM_BADGE = {
+  STRICT: 'Strict',
+  HOME: 'Home',
+  CUSTOM: 'Custom',
+} as const;
+export type FilesystemBadge = (typeof FILESYSTEM_BADGE)[keyof typeof FILESYSTEM_BADGE];
+
+export const RUNTIME = {
+  PODMAN: 'podman',
+} as const;
+
 export const TIMEOUTS = {
   PAGE_LOAD: 90_000,
   NON_DEVTOOLS_WINDOW: 60_000,
@@ -209,5 +247,6 @@ export const TIMEOUTS = {
   INITIALIZING_SCREEN: 180_000,
   STANDARD: 30_000,
   SHORT: 10_000,
-  MODEL_RESPONSE: 90_000, // Longer timeout for LLM responses (especially local models like Ollama on slower runners)
+  MODEL_RESPONSE: 90_000,
+  WORKSPACE_READY: 180_000,
 } as const;

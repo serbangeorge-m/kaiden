@@ -269,24 +269,6 @@ export class KdnCli {
     await writeFile(configPath, output, 'utf-8');
   }
 
-  async updateWorkspaceConfig(configurationPath: string, update: Partial<WorkspaceConfiguration>): Promise<void> {
-    const configPath = join(configurationPath, 'workspace.json');
-
-    let existing: WorkspaceConfiguration = {};
-    try {
-      const content = await readFile(configPath, 'utf-8');
-      existing = JSON.parse(content) as WorkspaceConfiguration;
-    } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw err;
-      }
-    }
-
-    const merged = { ...existing, ...update };
-    const output = JSON.stringify(merged, undefined, 2) + '\n';
-    await writeFile(configPath, output, 'utf-8');
-  }
-
   async listWorkspaces(): Promise<AgentWorkspaceSummary[]> {
     const response = await this.execCLI<{ items: AgentWorkspaceSummary[] }>(['workspace', 'list']);
     return response.items;

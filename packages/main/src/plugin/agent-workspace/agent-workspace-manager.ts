@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { access, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, readFile, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 
@@ -298,33 +298,6 @@ export class AgentWorkspaceManager implements Disposable {
     }
   }
 
-  async updateConfiguration(id: string, config: Partial<AgentWorkspaceConfiguration>): Promise<void> {
-    const workspaces = await this.list();
-    const workspace = workspaces.find(ws => ws.id === id);
-    if (!workspace) {
-      throw new Error(`workspace "${id}" not found. Use "workspace list" to see available workspaces.`);
-    }
-    await this.kdnCli.updateWorkspaceConfig(workspace.paths.configuration, config);
-    this.apiSender.send('agent-workspace-update');
-  }
-
-  async updateSummary(id: string, update: Pick<AgentWorkspaceSummary, 'name'>): Promise<void> {
-    const instancesPath = join(homedir(), '.kdn', 'instances.json');
-    const raw = await readFile(instancesPath, 'utf-8');
-    const instances: unknown[] = JSON.parse(raw) as unknown[];
-    const entry = instances.find(
-      (item): item is Record<string, unknown> =>
-        typeof item === 'object' && item !== null && (item as Record<string, unknown>)['id'] === id,
-    );
-    if (!entry) {
-      throw new Error(`workspace "${id}" not found in instances.json`);
-    }
-    if (update.name !== undefined) {
-      entry['name'] = update.name;
-    }
-    await writeFile(instancesPath, JSON.stringify(instances, undefined, 4) + '\n', 'utf-8');
-  }
-
   async start(id: string): Promise<AgentWorkspaceId> {
     const result = await this.kdnCli.startWorkspace(id);
     this.apiSender.send('agent-workspace-update');
@@ -417,20 +390,6 @@ export class AgentWorkspaceManager implements Disposable {
       'agent-workspace:getConfiguration',
       async (_listener: unknown, id: string): Promise<AgentWorkspaceConfiguration> => {
         return this.getConfiguration(id);
-      },
-    );
-
-    this.ipcHandle(
-      'agent-workspace:updateConfiguration',
-      async (_listener: unknown, id: string, config: Partial<AgentWorkspaceConfiguration>): Promise<void> => {
-        return this.updateConfiguration(id, config);
-      },
-    );
-
-    this.ipcHandle(
-      'agent-workspace:updateSummary',
-      async (_listener: unknown, id: string, update: Pick<AgentWorkspaceSummary, 'name'>): Promise<void> => {
-        return this.updateSummary(id, update);
       },
     );
 

@@ -402,10 +402,10 @@ test('Expect files tab is not present', async () => {
   });
 });
 
-test('Expect settings tab is present', async () => {
+test('Expect settings tab is not present', async () => {
   render(AgentWorkspaceDetails, { workspaceId: 'ws-1' });
 
   await waitFor(() => {
-    expect(screen.getByText('Settings')).toBeInTheDocument();
+    expect(screen.queryByText('Settings')).not.toBeInTheDocument();
   });
 });

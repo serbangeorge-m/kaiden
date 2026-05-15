@@ -1,0 +1,192 @@
+/**********************************************************************
+ * Copyright (C) 2026 Red Hat, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ ***********************************************************************/
+
+import { mkdtempSync, rmSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+import type { Expect } from '@playwright/test';
+import {
+  type CodingAgent,
+  FILESYSTEM_BADGE,
+  NETWORK_MODE,
+  RUNTIME,
+  SANDBOX_BADGE,
+  TIMEOUTS,
+  WIZARD_STEP,
+  WORKSPACE_STATUS,
+} from 'src/model/core/types';
+import type { AgentWorkspaceCreatePage } from 'src/model/pages/agent-workspace-create-page';
+
+import type { test as providerTest } from '../../../fixtures/provider-fixtures';
+import { waitForNavigationReady } from '../../../utils/app-ready';
+
+export interface WorkspaceLifecycleConfig {
+  testIdPrefix: string;
+  workspaceName: string;
+  agent: CodingAgent;
+  selectModel: (createPage: AgentWorkspaceCreatePage) => Promise<string | undefined>;
+  terminalReadyPatterns: RegExp[];
+  promptTest: {
+    prompt: string;
+    expectedResponse: RegExp;
+  };
+}
+
+export function registerWorkspaceLifecycleTests(
+  test: typeof providerTest,
+  expect: Expect,
+  config: WorkspaceLifecycleConfig,
+): void {
+  const podmanAvailable = !!process.env.PODMAN_ENABLED;
+
+  test.skip(
+    process.platform !== 'linux' && !podmanAvailable,
+    'Workspace tests require Podman (set PODMAN_ENABLED=true on non-Linux)',
+  );
+
+  let workingDir: string;
+  let selectedModel: string | undefined;
+  let countsBefore: { activeSessions: number; totalSessions: number; configuredAgents: number };
+
+  test.beforeAll(() => {
+    workingDir = mkdtempSync(join(homedir(), '.kdn-e2e-'));
+  });
+
+  test.afterAll(() => {
+    rmSync(workingDir, { recursive: true, force: true });
+  });
+
+  test.beforeEach(async ({ page }) => {
+    await waitForNavigationReady(page);
+  });
+
+  test(`[${config.testIdPrefix}-01] Creates a workspace`, async ({ navigationBar, agentWorkspacesPage }) => {
+    await navigationBar.navigateToWorkspacesPage();
+    countsBefore = await agentWorkspacesPage.getStatCounts();
+    const createPage = await agentWorkspacesPage.openCreatePage();
+
+    await createPage.sessionNameInput.fill(config.workspaceName);
+    await createPage.workingDirInput.fill(workingDir);
+    await createPage.continueToStep(WIZARD_STEP.AGENT_MODEL);
+
+    await createPage.selectAgent(config.agent);
+    await expect(createPage.modelList.first()).toBeVisible();
+    selectedModel = await config.selectModel(createPage);
+
+    await createPage.continueToStep(WIZARD_STEP.TOOLS_SECRETS);
+    await createPage.continueToStep(WIZARD_STEP.FILE_SYSTEM);
+    await createPage.continueToStep(WIZARD_STEP.NETWORKING);
+
+    await createPage.startWorkspace();
+    await expect(agentWorkspacesPage.heading).toBeVisible();
+  });
+
+  test(`[${config.testIdPrefix}-02] Workspace appears with Running status`, async ({
+    navigationBar,
+    agentWorkspacesPage,
+  }) => {
+    test.slow();
+    await navigationBar.navigateToWorkspacesPage();
+    await agentWorkspacesPage.ensureRowExists(config.workspaceName, TIMEOUTS.WORKSPACE_READY);
+    await agentWorkspacesPage.waitForWorkspaceStatus(
+      config.workspaceName,
+      WORKSPACE_STATUS.RUNNING,
+      TIMEOUTS.WORKSPACE_READY,
+    );
+  });
+
+  test(`[${config.testIdPrefix}-03] Stat cards reflect the new workspace`, async ({
+    navigationBar,
+    agentWorkspacesPage,
+  }) => {
+    await navigationBar.navigateToWorkspacesPage();
+    const countsAfter = await agentWorkspacesPage.getStatCounts();
+    expect(countsAfter.totalSessions).toBe(countsBefore.totalSessions + 1);
+    expect(countsAfter.activeSessions).toBe(countsBefore.activeSessions + 1);
+    expect(countsAfter.configuredAgents).toBeGreaterThanOrEqual(countsBefore.configuredAgents);
+  });
+
+  test(`[${config.testIdPrefix}-04] Overview displays correct configuration`, async ({
+    navigationBar,
+    agentWorkspacesPage,
+  }) => {
+    await navigationBar.navigateToWorkspacesPage();
+    const detailsPage = await agentWorkspacesPage.openWorkspaceDetails(config.workspaceName);
+    await detailsPage.openOverviewTab();
+    await detailsPage.verifyOverview({
+      agentName: config.agent,
+      ...(selectedModel ? { model: selectedModel } : {}),
+      project: workingDir,
+      status: WORKSPACE_STATUS.RUNNING,
+      runtime: RUNTIME.PODMAN,
+      network: NETWORK_MODE.DEVELOPER_PRESET,
+      sandboxBadge: SANDBOX_BADGE.ACTIVE,
+      mcpServersCount: 0,
+      filesystemBadge: FILESYSTEM_BADGE.STRICT,
+      sourcePath: workingDir,
+    });
+  });
+
+  test(`[${config.testIdPrefix}-05] Terminal shows agent is loaded`, async ({ navigationBar, agentWorkspacesPage }) => {
+    test.slow();
+    await navigationBar.navigateToWorkspacesPage();
+    const detailsPage = await agentWorkspacesPage.openWorkspaceTerminal(config.workspaceName);
+    await detailsPage.openTerminalTab();
+    for (const pattern of config.terminalReadyPatterns) {
+      await detailsPage.waitForTerminalContent(pattern, TIMEOUTS.WORKSPACE_READY);
+    }
+  });
+
+  test(`[${config.testIdPrefix}-06] Sends a prompt and receives a response`, async ({
+    navigationBar,
+    agentWorkspacesPage,
+  }) => {
+    test.slow();
+    await navigationBar.navigateToWorkspacesPage();
+    const detailsPage = await agentWorkspacesPage.openWorkspaceTerminal(config.workspaceName);
+    await detailsPage.openTerminalTab();
+
+    await detailsPage.waitForTerminalContent(config.terminalReadyPatterns[0]!, TIMEOUTS.WORKSPACE_READY);
+    await detailsPage.sendPromptAndWaitForResponse({
+      prompt: config.promptTest.prompt,
+      expectedResponse: config.promptTest.expectedResponse,
+      timeout: TIMEOUTS.MODEL_RESPONSE,
+    });
+  });
+
+  test(`[${config.testIdPrefix}-07] Removes the workspace`, async ({ navigationBar, agentWorkspacesPage }) => {
+    test.slow();
+    await navigationBar.navigateToWorkspacesPage();
+    await agentWorkspacesPage.removeWorkspace(config.workspaceName);
+    await expect(agentWorkspacesPage.noWorkspacesMessage.or(agentWorkspacesPage.table)).toBeVisible();
+    if (await agentWorkspacesPage.table.isVisible()) {
+      await agentWorkspacesPage.ensureRowDoesNotExist(config.workspaceName, TIMEOUTS.WORKSPACE_READY);
+    }
+  });
+
+  test(`[${config.testIdPrefix}-08] Stat cards reflect workspace removal`, async ({
+    navigationBar,
+    agentWorkspacesPage,
+  }) => {
+    await navigationBar.navigateToWorkspacesPage();
+    const countsAfterRemoval = await agentWorkspacesPage.getStatCounts();
+    expect(countsAfterRemoval.totalSessions).toBe(countsBefore.totalSessions);
+    expect(countsAfterRemoval.activeSessions).toBe(countsBefore.activeSessions);
+  });
+}

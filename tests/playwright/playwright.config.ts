@@ -77,11 +77,21 @@ const config: PlaywrightTestConfig & {
     },
     {
       name: 'OpenAI-Provider',
-      testMatch: ['**/provider-specs/*.spec.ts'],
+      testMatch: ['**/provider-specs/*.spec.ts', '**/provider-specs/workspaces/*.spec.ts'],
       use: {
         resource: 'openai',
       },
-      testIgnore: process.env.OPENAI_API_KEY ? [] : ['**/*'], // Skip if OPENAI_API_KEY is not set
+      testIgnore: process.env.OPENAI_API_KEY
+        ? ['**/provider-specs/chat-smoke.spec.ts', '**/provider-specs/workspaces/workspace-claude-smoke.spec.ts']
+        : ['**/*'],
+    },
+    {
+      name: 'Claude-Provider',
+      testMatch: ['**/provider-specs/workspaces/workspace-claude-smoke.spec.ts'],
+      use: {
+        resource: 'claude',
+      },
+      testIgnore: process.env.ANTHROPIC_API_KEY && podmanAvailable ? [] : ['**/*'],
     },
     {
       name: 'OpenShift-AI-Provider',

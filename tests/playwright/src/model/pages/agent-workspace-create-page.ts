@@ -153,4 +153,46 @@ export class AgentWorkspaceCreatePage extends BasePage {
     await expect(this.submitButton).toBeEnabled();
     await this.submitButton.click();
   }
+
+  get modelList(): Locator {
+    return this.page.getByRole('table', { name: /models/ });
+  }
+
+  get modelSearchInput(): Locator {
+    return this.page.getByRole('searchbox', { name: 'Filter catalog models' });
+  }
+
+  async searchModel(term: string): Promise<void> {
+    await expect(this.modelSearchInput).toBeVisible();
+    await this.modelSearchInput.fill(term);
+  }
+
+  getModelTableRows(): Locator {
+    return this.page.locator('[data-testid^="model-row-"]');
+  }
+
+  getModelRowRuntime(row: Locator): Locator {
+    return row.locator('td').nth(3);
+  }
+
+  async selectDefaultModel(): Promise<string> {
+    const firstRadio = this.page.locator('input[name="modelSelection"]').first();
+    await expect(firstRadio).toBeVisible();
+    if (!(await firstRadio.isChecked())) {
+      await firstRadio.click();
+    }
+    await expect(firstRadio).toBeChecked();
+    const ariaLabel = await firstRadio.getAttribute('aria-label');
+    return ariaLabel?.replace(/^Use\s+/, '') ?? '';
+  }
+
+  async verifyModelRuntimes(expectedRuntime: string): Promise<void> {
+    const rows = this.getModelTableRows();
+    const count = await rows.count();
+    expect(count, 'Expected at least one model row').toBeGreaterThan(0);
+    for (let i = 0; i < count; i++) {
+      const runtimeCell = this.getModelRowRuntime(rows.nth(i));
+      await expect(runtimeCell).toHaveText(expectedRuntime);
+    }
+  }
 }
