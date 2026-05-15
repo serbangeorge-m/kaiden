@@ -27,6 +27,7 @@ test.describe
       testIdPrefix: 'WKS-OPENAI',
       workspaceName: 'opencode-e2e-smoke',
       agent: CODING_AGENT.OPENCODE,
+      requiredResource: 'openai',
       selectModel: async createPage => {
         await createPage.searchModel('chat');
         await expect(createPage.getModelTableRows().first()).toBeVisible();
@@ -34,6 +35,27 @@ test.describe
         return undefined;
       },
       terminalReadyPatterns: [/Ask anything/, /OpenAI/],
+      promptTest: {
+        prompt: 'what is 123+456? reply with just the number',
+        expectedResponse: /579/,
+      },
+    });
+  });
+
+test.describe
+  .serial('OpenCode agent workspace with Gemini', { tag: '@smoke' }, () => {
+    registerWorkspaceLifecycleTests(test, expect, {
+      testIdPrefix: 'WKS-GEMINI',
+      workspaceName: 'opencode-gemini-e2e-smoke',
+      agent: CODING_AGENT.OPENCODE,
+      requiredResource: 'gemini',
+      selectModel: async createPage => {
+        await createPage.searchModel('gemini');
+        await expect(createPage.getModelTableRows().first()).toBeVisible();
+        await createPage.verifyModelRuntimes('Gemini');
+        return createPage.selectDefaultModel();
+      },
+      terminalReadyPatterns: [/Ask anything/, /Gemini/],
       promptTest: {
         prompt: 'what is 123+456? reply with just the number',
         expectedResponse: /579/,

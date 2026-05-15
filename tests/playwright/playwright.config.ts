@@ -33,7 +33,7 @@ if (ramaLamaAvailable) {
 }
 
 if (podmanAvailable) {
-  console.log('Podman enabled - running Knowledge Database tests');
+  console.log('Podman enabled - running container-dependent tests');
 }
 
 const config: PlaywrightTestConfig & {
@@ -77,21 +77,18 @@ const config: PlaywrightTestConfig & {
     },
     {
       name: 'OpenAI-Provider',
-      testMatch: ['**/provider-specs/*.spec.ts', '**/provider-specs/workspaces/*.spec.ts'],
+      testMatch: ['**/provider-specs/*.spec.ts'],
       use: {
         resource: 'openai',
       },
-      testIgnore: process.env.OPENAI_API_KEY
-        ? ['**/provider-specs/chat-smoke.spec.ts', '**/provider-specs/workspaces/workspace-claude-smoke.spec.ts']
-        : ['**/*'],
+      testIgnore: process.env.OPENAI_API_KEY ? ['**/provider-specs/chat-smoke.spec.ts'] : ['**/*'],
     },
     {
-      name: 'Claude-Provider',
-      testMatch: ['**/provider-specs/workspaces/workspace-claude-smoke.spec.ts'],
+      name: 'Workspace-Provider',
+      testMatch: ['**/provider-specs/workspaces/*.spec.ts'],
       use: {
-        resource: 'claude',
+        resource: 'ollama',
       },
-      testIgnore: process.env.ANTHROPIC_API_KEY && podmanAvailable ? [] : ['**/*'],
     },
     {
       name: 'OpenShift-AI-Provider',

@@ -25,6 +25,8 @@ import {
   type CodingAgent,
   FILESYSTEM_BADGE,
   NETWORK_MODE,
+  PROVIDERS,
+  type ResourceId,
   RUNTIME,
   SANDBOX_BADGE,
   SETTINGS_SECTIONS,
@@ -41,6 +43,7 @@ export interface WorkspaceLifecycleConfig {
   testIdPrefix: string;
   workspaceName: string;
   agent: CodingAgent;
+  requiredResource?: ResourceId;
   selectModel: (createPage: AgentWorkspaceCreatePage) => Promise<string | undefined>;
   terminalReadyPatterns: RegExp[];
   promptTest: {
@@ -61,16 +64,34 @@ export function registerWorkspaceLifecycleTests(
     'Workspace tests require Podman (set PODMAN_ENABLED=true on non-Linux)',
   );
 
+  if (config.requiredResource) {
+    const envVar = PROVIDERS[config.requiredResource].envVarName;
+    test.skip(!process.env[envVar], `${envVar} not set`);
+  }
+
   let workingDir: string;
   let selectedModel: string | undefined;
   let countsBefore: { activeSessions: number; totalSessions: number; configuredAgents: number };
 
-  test.beforeAll(() => {
+  test.beforeAll(async ({ navigationBar }) => {
+    if (config.requiredResource) {
+      const provider = PROVIDERS[config.requiredResource];
+      const settingsPage = await navigationBar.navigateToSettingsPage();
+      await settingsPage.createResource(config.requiredResource, process.env[provider.envVarName]!);
+    }
     workingDir = mkdtempSync(join(homedir(), '.kdn-e2e-'));
   });
 
-  test.afterAll(() => {
+  test.afterAll(async ({ navigationBar }) => {
     rmSync(workingDir, { recursive: true, force: true });
+    if (config.requiredResource) {
+      try {
+        const settingsPage = await navigationBar.navigateToSettingsPage();
+        await settingsPage.deleteResource(config.requiredResource);
+      } catch (error) {
+        console.error(`Failed to delete ${config.requiredResource} resource:`, error);
+      }
+    }
   });
 
   test.beforeEach(async ({ page }) => {

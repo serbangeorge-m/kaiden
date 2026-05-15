@@ -27,6 +27,7 @@ test.describe
       testIdPrefix: 'WKS-CLAUDE',
       workspaceName: 'claude-e2e-smoke',
       agent: CODING_AGENT.CLAUDE,
+      requiredResource: 'claude',
       selectModel: async createPage => {
         await createPage.verifyModelRuntimes('Claude');
         return createPage.selectDefaultModel();
