@@ -111,6 +111,18 @@ jobs:
           sudo apt-get install -y gnome-keyring dbus-x11 libsecret-1-0 libsecret-tools
           mkdir -p "$HOME/.local/share/keyrings"
 
+      - name: Setup kdn CLI
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          ARCH=$([[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]] && echo "arm64" || echo "amd64")
+          KDN_VERSION=$(curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/openkaiden/kdn/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          ARCHIVE="kdn_${KDN_VERSION}_linux_${ARCH}.tar.gz"
+          curl -sSL "https://github.com/openkaiden/kdn/releases/download/v${KDN_VERSION}/${ARCHIVE}" \
+            | sudo tar xz -C /usr/local/bin kdn
+          kdn version
+
       - name: Setup Ollama
         if: inputs.inference_provider == 'ollama'
         uses: ./.github/actions/setup-ollama
@@ -163,6 +175,11 @@ jobs:
           if [ "$RUNNER_OS" == "Linux" ]; then
             dbus-run-session -- bash -c '
               echo "" | gnome-keyring-daemon --start --components=secrets --unlock --daemonize
+              dbus-send --session --dest=org.freedesktop.secrets \
+                /org/freedesktop/secrets \
+                org.freedesktop.Secret.Service.SetAlias \
+                string:"default" \
+                objpath:"/org/freedesktop/secrets/collection/login"
               pnpm ${{ inputs.test_script }}
             '
           else

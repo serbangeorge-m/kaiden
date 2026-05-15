@@ -62,7 +62,7 @@ jobs:
     uses: ./.github/workflows/e2e-test-job.yaml
     with:
       instance: ${{ matrix.os }}
-      mode: ${{ (inputs.test_suite == 'test:e2e:workspaces') && 'prod' || matrix.mode }}
+      mode: ${{ matrix.mode }}
       compile_args: '--win dir'
       test_script: ${{ inputs.test_suite || 'test:e2e' }}
       repo: ${{ inputs.repo }}
@@ -83,7 +83,7 @@ jobs:
     uses: ./.github/workflows/e2e-test-job.yaml
     with:
       instance: ${{ matrix.os }}
-      mode: ${{ (inputs.test_suite == 'test:e2e:workspaces') && 'prod' || matrix.mode }}
+      mode: ${{ matrix.mode }}
       inference_provider: ${{ matrix.inference_provider }}
       inference_model: 'granite3.2:2b'
       inference_second_model: ${{ matrix.second_model }}
@@ -103,7 +103,7 @@ jobs:
     uses: ./.github/workflows/e2e-test-job.yaml
     with:
       instance: ${{ matrix.os }}
-      mode: ${{ (inputs.test_suite == 'test:e2e:workspaces') && 'prod' || matrix.mode }}
+      mode: ${{ matrix.mode }}
       compile_args: '--mac dir'
       test_script: ${{ inputs.test_suite || 'test:e2e' }}
       repo: ${{ inputs.repo }}
