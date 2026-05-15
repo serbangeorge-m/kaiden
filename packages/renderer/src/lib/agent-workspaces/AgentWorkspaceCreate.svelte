@@ -19,12 +19,12 @@ import type { ChecklistItem } from '/@/lib/ui/ChecklistPanel.svelte';
 import FormPage from '/@/lib/ui/FormPage.svelte';
 import WizardStepper from '/@/lib/ui/WizardStepper.svelte';
 import { handleNavigation } from '/@/navigation';
+import { resetDraft, wizard } from '/@/stores/agent-workspace-create-draft.svelte';
 import { agentWorkspaceRuntime } from '/@/stores/agentworkspace-runtime';
 import { mcpRemoteServerInfos } from '/@/stores/mcp-remote-servers';
 import { disabledModels, isModelEnabled, modelKey } from '/@/stores/model-catalog';
 import { providerInfos } from '/@/stores/providers';
 import { ragEnvironments } from '/@/stores/rag-environments';
-import { secretVaultInfos } from '/@/stores/secret-vault';
 import { skillInfos } from '/@/stores/skills';
 import type {
   AgentWorkspaceConfiguration,
@@ -109,8 +109,6 @@ let networkOptions: NetworkAccessOption[] = $derived(
   })),
 );
 
-const REGISTRY_HOSTS = ['registry.npmjs.org', 'pypi.python.org'];
-
 function mapNetworkSelection(value: string, hosts: string[]): NetworkConfiguration | undefined {
   const filtered = hosts.filter(h => h.trim() !== '');
   switch (value) {
@@ -161,62 +159,44 @@ let knowledgeItems: ChecklistItem[] = $derived(
     }),
 );
 
-// --- Form state ---
-let sourcePath = $state('');
-let sessionName = $state('');
-let description = $state('');
-let configExists = $state(false);
-let configAction = $state<'merge' | 'replace'>('merge');
-let selectedAgent = $state('opencode');
-let selectedModel = $state<ModelInfo | undefined>(undefined);
+// --- Form state (backed by persistent draft store) ---
 let defaultSettings = $state<DefaultWorkspaceSettings | undefined>(undefined);
 
 onMount(async () => {
   defaultSettings = await window.getConfigurationValue<DefaultWorkspaceSettings>('onboarding.defaultWorkspaceSettings');
 
-  const defaultAgent = defaultSettings?.defaultAgent;
-  if (defaultAgent && agentDefinitions.some(d => d.cliName === defaultAgent)) {
-    selectedAgent = defaultAgent;
-  }
+  if (!wizard.draft.initialized) {
+    const defaultAgent = defaultSettings?.defaultAgent;
+    if (defaultAgent && agentDefinitions.some(d => d.cliName === defaultAgent)) {
+      wizard.draft.selectedAgent = defaultAgent;
+    }
 
-  if (
-    defaultAgent &&
-    defaultSettings?.defaultAgentSettings?.[defaultAgent]?.defaultModel?.providerId &&
-    defaultSettings?.defaultAgentSettings?.[defaultAgent]?.defaultModel?.label
-  ) {
-    const allModels = getCatalogModels($providerInfos);
-    const match = allModels.find(
-      m =>
-        m.providerId === defaultSettings?.defaultAgentSettings?.[defaultAgent]?.defaultModel?.providerId &&
-        m.label === defaultSettings?.defaultAgentSettings?.[defaultAgent]?.defaultModel?.label,
-    );
-    if (match) {
-      selectedModel = match;
+    if (
+      defaultAgent &&
+      defaultSettings?.defaultAgentSettings?.[defaultAgent]?.defaultModel?.providerId &&
+      defaultSettings?.defaultAgentSettings?.[defaultAgent]?.defaultModel?.label
+    ) {
+      const allModels = getCatalogModels($providerInfos);
+      const match = allModels.find(
+        m =>
+          m.providerId === defaultSettings?.defaultAgentSettings?.[defaultAgent]?.defaultModel?.providerId &&
+          m.label === defaultSettings?.defaultAgentSettings?.[defaultAgent]?.defaultModel?.label,
+      );
+      if (match) {
+        wizard.draft.selectedModel = match;
+      }
     }
-  }
-  if (!selectedModel) {
-    const firstModel = getFirstCompatibleModel();
-    if (firstModel) {
-      selectedModel = firstModel;
+    if (!wizard.draft.selectedModel) {
+      const firstModel = getFirstCompatibleModel();
+      if (firstModel) {
+        wizard.draft.selectedModel = firstModel;
+      }
     }
+
+    wizard.draft.initialized = true;
   }
 });
-let selectedFileAccess = $state('workspace');
-let selectedNetwork = $state('registries');
-let selectedSkillIds = $derived(skillItems.map(s => s.id));
-let selectedMcpIds = $derived(mcpItems.map(m => m.id));
-let selectedSecretIds = $derived($secretVaultInfos.map(s => s.id));
-let selectedKnowledgeIds = $derived(knowledgeItems.map(k => k.id));
-let customMounts = $state<CustomMount[]>([{ host: '', target: '', ro: false }]);
-let hostsByMode = $state<Record<string, string[]>>({
-  registries: [...REGISTRY_HOSTS],
-  blocked: [''],
-});
-let customHosts = $derived(hostsByMode[selectedNetwork] ?? []);
-
-// --- Step 1 UI state ---
-let nameManuallyEdited = $state(false);
-let descriptionOpen = $state(false);
+let customHosts = $derived(wizard.draft.hostsByMode[wizard.draft.selectedNetwork] ?? []);
 
 function getDefaultSessionName(path: string): string {
   const normalized = path.trim().replace(/[\\/]+$/, '');
@@ -224,76 +204,91 @@ function getDefaultSessionName(path: string): string {
 }
 
 $effect(() => {
-  if (nameManuallyEdited) return;
-  const last = getDefaultSessionName(sourcePath);
-  if (last) sessionName = last;
+  if (wizard.draft.nameManuallyEdited) return;
+  const last = getDefaultSessionName(wizard.draft.sourcePath);
+  if (last) wizard.draft.sessionName = last;
 });
 
+let configCheckToken = 0;
+
 $effect(() => {
-  const trimmed = sourcePath.trim();
+  const trimmed = wizard.draft.sourcePath.trim();
+  const token = ++configCheckToken;
   if (trimmed) {
     window
       .checkAgentWorkspaceConfigExists(trimmed)
       .then(exists => {
-        configExists = exists;
+        if (token === configCheckToken) {
+          wizard.draft.configExists = exists;
+        }
       })
       .catch(() => {
-        configExists = false;
+        if (token === configCheckToken) {
+          wizard.draft.configExists = false;
+        }
       });
   } else {
-    configExists = false;
+    wizard.draft.configExists = false;
   }
 });
 
 // --- Wizard navigation ---
-let currentStepIndex = $state(0);
+let currentStepIndex = $derived(wizard.draft.currentStepIndex);
 let error = $state('');
 
-let currentStepId = $derived(wizardSteps[currentStepIndex]?.id ?? '');
-let isLastStep = $derived(currentStepIndex === wizardSteps.length - 1);
+let currentStepId = $derived(wizardSteps[wizard.draft.currentStepIndex]?.id ?? '');
+let isLastStep = $derived(wizard.draft.currentStepIndex === wizardSteps.length - 1);
 let isCurrentStepComplete = $derived(
-  currentStepId === 'workspace' ? sessionName.trim() !== '' && sourcePath.trim() !== '' : true,
+  currentStepId === 'workspace'
+    ? wizard.draft.sessionName.trim() !== '' && wizard.draft.sourcePath.trim() !== ''
+    : true,
 );
 
 function goNext(): void {
-  if (currentStepIndex < wizardSteps.length - 1) currentStepIndex++;
+  if (wizard.draft.currentStepIndex < wizardSteps.length - 1) wizard.draft.currentStepIndex++;
 }
 
 function goBack(): void {
-  if (currentStepIndex > 0) currentStepIndex--;
+  if (wizard.draft.currentStepIndex > 0) wizard.draft.currentStepIndex--;
 }
 
 function handleStepClick(index: number): void {
-  currentStepIndex = index;
+  wizard.draft.currentStepIndex = index;
 }
 
 function addCustomMount(): void {
-  customMounts = [...customMounts, { host: '', target: '', ro: false }];
+  wizard.draft.customMounts = [...wizard.draft.customMounts, { host: '', target: '', ro: false }];
 }
 
 function removeCustomMount(index: number): void {
-  if (customMounts.length <= 1) return;
-  customMounts = customMounts.filter((_, i) => i !== index);
+  if (wizard.draft.customMounts.length <= 1) return;
+  wizard.draft.customMounts = wizard.draft.customMounts.filter((_, i) => i !== index);
 }
 
 function updateCustomMount(index: number, field: keyof CustomMount, value: string | boolean): void {
-  customMounts = customMounts.map((m, i) => (i === index ? { ...m, [field]: value } : m));
+  wizard.draft.customMounts = wizard.draft.customMounts.map((m, i) => (i === index ? { ...m, [field]: value } : m));
 }
 
 function addCustomHost(): void {
-  const current = hostsByMode[selectedNetwork] ?? [];
-  hostsByMode = { ...hostsByMode, [selectedNetwork]: [...current, ''] };
+  const current = wizard.draft.hostsByMode[wizard.draft.selectedNetwork] ?? [];
+  wizard.draft.hostsByMode = { ...wizard.draft.hostsByMode, [wizard.draft.selectedNetwork]: [...current, ''] };
 }
 
 function removeCustomHost(index: number): void {
-  const current = hostsByMode[selectedNetwork] ?? [];
+  const current = wizard.draft.hostsByMode[wizard.draft.selectedNetwork] ?? [];
   if (current.length <= 1) return;
-  hostsByMode = { ...hostsByMode, [selectedNetwork]: current.filter((_, i) => i !== index) };
+  wizard.draft.hostsByMode = {
+    ...wizard.draft.hostsByMode,
+    [wizard.draft.selectedNetwork]: current.filter((_, i) => i !== index),
+  };
 }
 
 function updateCustomHost(index: number, value: string): void {
-  const current = hostsByMode[selectedNetwork] ?? [];
-  hostsByMode = { ...hostsByMode, [selectedNetwork]: current.map((h, i) => (i === index ? value : h)) };
+  const current = wizard.draft.hostsByMode[wizard.draft.selectedNetwork] ?? [];
+  wizard.draft.hostsByMode = {
+    ...wizard.draft.hostsByMode,
+    [wizard.draft.selectedNetwork]: current.map((h, i) => (i === index ? value : h)),
+  };
 }
 
 async function handleBrowseCustomPath(index: number): Promise<void> {
@@ -313,10 +308,10 @@ async function handleBrowseSource(): Promise<void> {
     const result = await window.openDialog({ title: 'Select a working directory', selectors: ['openDirectory'] });
     const selected = result?.[0];
     if (selected) {
-      sourcePath = selected;
-      if (!nameManuallyEdited) {
+      wizard.draft.sourcePath = selected;
+      if (!wizard.draft.nameManuallyEdited) {
         const lastSegment = getDefaultSessionName(selected);
-        if (lastSegment) sessionName = lastSegment;
+        if (lastSegment) wizard.draft.sessionName = lastSegment;
       }
     }
   } catch (err: unknown) {
@@ -327,6 +322,7 @@ async function handleBrowseSource(): Promise<void> {
 }
 
 function cancel(): void {
+  resetDraft();
   handleNavigation({ page: NavigationPage.AGENT_WORKSPACES });
 }
 
@@ -352,7 +348,7 @@ function getAgentWorkspaceConfiguration(agent: string): AgentWorkspaceConfigurat
 }
 
 function getFirstCompatibleModel(): ModelInfo | undefined {
-  const agentDef = agentDefinitions.find(d => d.cliName === selectedAgent);
+  const agentDef = agentDefinitions.find(d => d.cliName === wizard.draft.selectedAgent);
   const enabled = getCatalogModels($providerInfos).filter(m => isModelEnabled($disabledModels, m.providerId, m.label));
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const seen = new Set<string>();
@@ -368,14 +364,14 @@ function getFirstCompatibleModel(): ModelInfo | undefined {
   return compatible[0];
 }
 
-function buildMounts(): AgentWorkspaceMount[] | undefined {
-  switch (selectedFileAccess) {
+function buildMountsFrom(fileAccess: string, mounts: CustomMount[]): AgentWorkspaceMount[] | undefined {
+  switch (fileAccess) {
     case 'home':
       return [{ host: '$HOME', target: '$HOME', ro: false }];
     case 'full':
       return [{ host: '/', target: '/', ro: false }];
     case 'custom': {
-      const mounts = customMounts
+      const filtered = mounts
         .filter(m => m.host.trim() !== '')
         .map(m => {
           const host = m.host.trim();
@@ -383,7 +379,7 @@ function buildMounts(): AgentWorkspaceMount[] | undefined {
           const target = trimmedTarget !== '' ? trimmedTarget : host;
           return { host, target, ro: m.ro };
         });
-      return mounts.length > 0 ? mounts : undefined;
+      return filtered.length > 0 ? filtered : undefined;
     }
     default:
       return undefined;
@@ -391,42 +387,52 @@ function buildMounts(): AgentWorkspaceMount[] | undefined {
 }
 
 async function startAsIs(): Promise<void> {
-  if (!sourcePath.trim()) return;
+  if (!wizard.draft.sourcePath.trim()) return;
 
-  handleNavigation({ page: NavigationPage.AGENT_WORKSPACES });
+  const draftSnapshot = $state.snapshot(wizard.draft);
 
   try {
-    const agentDef = agentDefinitions.find(d => d.cliName === selectedAgent);
+    const agentDef = agentDefinitions.find(d => d.cliName === draftSnapshot.selectedAgent);
     await window.createAgentWorkspace({
-      sourcePath,
+      sourcePath: draftSnapshot.sourcePath,
       runtime: $agentWorkspaceRuntime,
-      agent: agentDef?.cliAgent ?? selectedAgent,
-      name: sessionName || getDefaultSessionName(sourcePath),
+      agent: agentDef?.cliAgent ?? draftSnapshot.selectedAgent,
+      name: draftSnapshot.sessionName || getDefaultSessionName(draftSnapshot.sourcePath),
     });
+    resetDraft();
   } catch (err: unknown) {
     console.error('Failed to create agent workspace (as-is)', err);
-    await window.showMessageBox({
-      title: 'Agent Workspace',
-      type: 'error',
-      message: `Error while creating workspace: ${err instanceof Error ? err.message : String(err)}`,
-      buttons: ['OK'],
-    });
+    window
+      .showMessageBox({
+        title: 'Agent Workspace',
+        type: 'error',
+        message: `Error while creating workspace: ${err instanceof Error ? err.message : String(err)}`,
+        buttons: ['OK'],
+      })
+      .catch(console.error);
+  } finally {
+    handleNavigation({ page: NavigationPage.AGENT_WORKSPACES });
   }
 }
 
 async function startWorkspace(): Promise<void> {
-  if (!sessionName.trim() || !sourcePath.trim()) return;
+  if (!wizard.draft.sessionName.trim() || !wizard.draft.sourcePath.trim()) return;
 
-  handleNavigation({ page: NavigationPage.AGENT_WORKSPACES });
+  const draftSnapshot = $state.snapshot(wizard.draft);
 
   try {
-    const selectedSkillPaths = $skillInfos.filter(s => selectedSkillIds.includes(s.name)).map(s => s.path);
-    const network = mapNetworkSelection(selectedNetwork, customHosts);
-    const mounts = buildMounts();
+    const selectedSkillPaths = $skillInfos
+      .filter(s => draftSnapshot.selectedSkillIds.includes(s.name))
+      .map(s => s.path);
+    const network = mapNetworkSelection(
+      draftSnapshot.selectedNetwork,
+      draftSnapshot.hostsByMode[draftSnapshot.selectedNetwork] ?? [],
+    );
+    const mounts = buildMountsFrom(draftSnapshot.selectedFileAccess, draftSnapshot.customMounts);
 
-    const agentDef = agentDefinitions.find(d => d.cliName === selectedAgent);
+    const agentDef = agentDefinitions.find(d => d.cliName === draftSnapshot.selectedAgent);
 
-    const selected = $mcpRemoteServerInfos.filter(m => selectedMcpIds.includes(m.id));
+    const selected = $mcpRemoteServerInfos.filter(m => draftSnapshot.selectedMcpIds.includes(m.id));
     const remoteServers = selected
       .filter(m => m.setupType === 'remote' || (!m.setupType && m.url))
       .map(m => ({ name: m.name, url: m.url }));
@@ -441,14 +447,14 @@ async function startWorkspace(): Promise<void> {
     const hasMcp = remoteServers.length > 0 || commandServers.length > 0;
 
     await window.createAgentWorkspace({
-      sourcePath,
+      sourcePath: draftSnapshot.sourcePath,
       runtime: $agentWorkspaceRuntime,
-      agent: agentDef?.cliAgent ?? selectedAgent,
-      model: selectedModel ? getModelId(selectedModel) : undefined,
-      name: sessionName,
+      agent: agentDef?.cliAgent ?? draftSnapshot.selectedAgent,
+      model: draftSnapshot.selectedModel ? getModelId(draftSnapshot.selectedModel) : undefined,
+      name: draftSnapshot.sessionName,
       skills: selectedSkillPaths.length > 0 ? selectedSkillPaths : undefined,
       network,
-      secrets: selectedSecretIds.length > 0 ? [...selectedSecretIds] : undefined,
+      secrets: draftSnapshot.selectedSecretIds.length > 0 ? [...draftSnapshot.selectedSecretIds] : undefined,
       mounts,
       mcp: hasMcp
         ? {
@@ -456,17 +462,22 @@ async function startWorkspace(): Promise<void> {
             ...(commandServers.length > 0 ? { commands: commandServers } : {}),
           }
         : undefined,
-      workspaceConfiguration: getAgentWorkspaceConfiguration(selectedAgent),
-      replaceConfig: configExists && configAction === 'replace' ? true : undefined,
+      workspaceConfiguration: getAgentWorkspaceConfiguration(draftSnapshot.selectedAgent),
+      replaceConfig: draftSnapshot.configExists && draftSnapshot.configAction === 'replace' ? true : undefined,
     });
+    resetDraft();
   } catch (err: unknown) {
     console.error('Failed to create agent workspace', err);
-    await window.showMessageBox({
-      title: 'Agent Workspace',
-      type: 'error',
-      message: `Error while creating workspace: ${err instanceof Error ? err.message : String(err)}`,
-      buttons: ['OK'],
-    });
+    window
+      .showMessageBox({
+        title: 'Agent Workspace',
+        type: 'error',
+        message: `Error while creating workspace: ${err instanceof Error ? err.message : String(err)}`,
+        buttons: ['OK'],
+      })
+      .catch(console.error);
+  } finally {
+    handleNavigation({ page: NavigationPage.AGENT_WORKSPACES });
   }
 }
 </script>
@@ -495,31 +506,31 @@ async function startWorkspace(): Promise<void> {
           <div class="rounded-xl border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-inset-bg)] p-6">
             {#if currentStepId === 'workspace'}
               <AgentWorkspaceCreateStepWorkspace
-                bind:sourcePath
-                bind:sessionName
-                bind:description
-                bind:nameManuallyEdited
-                bind:descriptionOpen
+                bind:sourcePath={wizard.draft.sourcePath}
+                bind:sessionName={wizard.draft.sessionName}
+                bind:description={wizard.draft.description}
+                bind:nameManuallyEdited={wizard.draft.nameManuallyEdited}
+                bind:descriptionOpen={wizard.draft.descriptionOpen}
                 onBrowseSource={handleBrowseSource}
-                {configExists}
-                bind:configAction
+                configExists={wizard.draft.configExists}
+                bind:configAction={wizard.draft.configAction}
                 onStartAsIs={startAsIs} />
             {:else if currentStepId === 'agent-model'}
-              <AgentWorkspaceCreateStepAgentModel bind:selectedAgent bind:selectedModel />
+              <AgentWorkspaceCreateStepAgentModel bind:selectedAgent={wizard.draft.selectedAgent} bind:selectedModel={wizard.draft.selectedModel} />
             {:else if currentStepId === 'tools-secrets'}
               <AgentWorkspaceCreateStepToolsSecrets
                 {skillItems}
-                bind:selectedSkillIds
+                bind:selectedSkillIds={wizard.draft.selectedSkillIds}
                 {mcpItems}
-                bind:selectedMcpIds
-                bind:selectedSecretIds
+                bind:selectedMcpIds={wizard.draft.selectedMcpIds}
+                bind:selectedSecretIds={wizard.draft.selectedSecretIds}
                 {knowledgeItems}
-                bind:selectedKnowledgeIds />
+                bind:selectedKnowledgeIds={wizard.draft.selectedKnowledgeIds} />
             {:else if currentStepId === 'filesystem'}
               <AgentWorkspaceCreateStepFileSystem
                 {fileAccessOptions}
-                bind:selectedFileAccess
-                {customMounts}
+                bind:selectedFileAccess={wizard.draft.selectedFileAccess}
+                customMounts={wizard.draft.customMounts}
                 onBrowseCustomPath={handleBrowseCustomPath}
                 onAddCustomMount={addCustomMount}
                 onRemoveCustomMount={removeCustomMount}
@@ -527,8 +538,8 @@ async function startWorkspace(): Promise<void> {
             {:else if currentStepId === 'networking'}
               <AgentWorkspaceCreateStepNetworking
                 {networkOptions}
-                bind:selectedNetwork
-                {customHosts}
+                bind:selectedNetwork={wizard.draft.selectedNetwork}
+                customHosts={customHosts}
                 onAddCustomHost={addCustomHost}
                 onRemoveCustomHost={removeCustomHost}
                 onUpdateCustomHost={updateCustomHost} />

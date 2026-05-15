@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { access, readFile, rm } from 'node:fs/promises';
+import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { FileSystemWatcher } from '@openkaiden/api';
@@ -171,6 +171,10 @@ describe('init', () => {
 
   test('registers IPC handler for getConfiguration', () => {
     expect(ipcHandle).toHaveBeenCalledWith('agent-workspace:getConfiguration', expect.any(Function));
+  });
+
+  test('registers IPC handler for updateConfiguration', () => {
+    expect(ipcHandle).toHaveBeenCalledWith('agent-workspace:updateConfiguration', expect.any(Function));
   });
 
   test('registers IPC handler for start', () => {
@@ -892,6 +896,82 @@ describe('getConfiguration', () => {
     vi.mocked(readFile).mockRejectedValue(eacces);
 
     await expect(manager.getConfiguration('ws-1')).rejects.toThrow('EACCES: permission denied');
+  });
+});
+
+describe('updateConfiguration', () => {
+  test('delegates to kdnCli.updateWorkspaceConfig with the workspace configuration path', async () => {
+    vi.mocked(kdnCli.listWorkspaces).mockResolvedValue(TEST_SUMMARIES);
+    vi.mocked(kdnCli.updateWorkspaceConfig).mockResolvedValue(undefined);
+
+    await manager.updateConfiguration('ws-1', { skills: ['/path/to/skill'] });
+
+    expect(kdnCli.updateWorkspaceConfig).toHaveBeenCalledWith('/tmp/ws1/.kaiden', { skills: ['/path/to/skill'] });
+  });
+
+  test('emits agent-workspace-update event', async () => {
+    vi.mocked(kdnCli.listWorkspaces).mockResolvedValue(TEST_SUMMARIES);
+    vi.mocked(kdnCli.updateWorkspaceConfig).mockResolvedValue(undefined);
+
+    await manager.updateConfiguration('ws-1', { network: { mode: 'allow' } });
+
+    expect(apiSender.send).toHaveBeenCalledWith('agent-workspace-update');
+  });
+
+  test('throws when workspace id is not found', async () => {
+    vi.mocked(kdnCli.listWorkspaces).mockResolvedValue(TEST_SUMMARIES);
+
+    await expect(manager.updateConfiguration('unknown-id', {})).rejects.toThrow(
+      'workspace "unknown-id" not found. Use "workspace list" to see available workspaces.',
+    );
+  });
+
+  test('propagates errors from kdnCli.updateWorkspaceConfig', async () => {
+    vi.mocked(kdnCli.listWorkspaces).mockResolvedValue(TEST_SUMMARIES);
+    vi.mocked(kdnCli.updateWorkspaceConfig).mockRejectedValue(new Error('permission denied'));
+
+    await expect(manager.updateConfiguration('ws-1', {})).rejects.toThrow('permission denied');
+  });
+});
+
+describe('updateSummary', () => {
+  const INSTANCES_JSON = [
+    { id: 'ws-1', name: 'old-name', paths: { source: '/tmp/ws1' } },
+    { id: 'ws-2', name: 'other-workspace', paths: { source: '/tmp/ws2' } },
+  ];
+
+  test('updates the name of the matching workspace in instances.json', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(INSTANCES_JSON));
+
+    await manager.updateSummary('ws-1', { name: 'new-name' });
+
+    expect(writeFile).toHaveBeenCalledWith(
+      expect.stringMatching(/\.kdn[\\/]instances\.json$/),
+      expect.any(String),
+      'utf-8',
+    );
+    const written = JSON.parse(vi.mocked(writeFile).mock.calls[0]![1] as string) as { id: string; name: string }[];
+    expect(written.find(w => w.id === 'ws-1')?.name).toBe('new-name');
+    expect(written.find(w => w.id === 'ws-2')?.name).toBe('other-workspace');
+  });
+
+  test('throws when workspace id is not found', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(INSTANCES_JSON));
+
+    await expect(manager.updateSummary('unknown-id', { name: 'x' })).rejects.toThrow(
+      'workspace "unknown-id" not found in instances.json',
+    );
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  test('propagates file read errors', async () => {
+    vi.mocked(readFile).mockRejectedValue(new Error('EACCES: permission denied'));
+
+    await expect(manager.updateSummary('ws-1', { name: 'x' })).rejects.toThrow('EACCES: permission denied');
+  });
+
+  test('registers IPC handler for updateSummary', () => {
+    expect(ipcHandle).toHaveBeenCalledWith('agent-workspace:updateSummary', expect.any(Function));
   });
 });
 

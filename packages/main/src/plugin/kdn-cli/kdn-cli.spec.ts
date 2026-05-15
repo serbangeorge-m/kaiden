@@ -684,6 +684,59 @@ describe('create', () => {
   });
 });
 
+describe('updateWorkspaceConfig', () => {
+  const CONFIG_DIR = '/tmp/ws1/.kaiden';
+
+  test('merges update into existing workspace.json', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ skills: ['/path/to/skill1'] }));
+
+    await kdnCli.updateWorkspaceConfig(CONFIG_DIR, { network: { mode: 'deny', hosts: ['api.example.com'] } });
+
+    const writtenContent = vi.mocked(writeFile).mock.calls[0]![1] as string;
+    const parsed = JSON.parse(writtenContent);
+    expect(parsed.skills).toEqual(['/path/to/skill1']);
+    expect(parsed.network).toEqual({ mode: 'deny', hosts: ['api.example.com'] });
+  });
+
+  test('creates new workspace.json when file does not exist', async () => {
+    vi.mocked(readFile).mockRejectedValue(mockEnoent());
+
+    await kdnCli.updateWorkspaceConfig(CONFIG_DIR, { skills: ['/path/to/skill1'] });
+
+    expect(writeFile).toHaveBeenCalledWith(join(CONFIG_DIR, 'workspace.json'), expect.any(String), 'utf-8');
+    const writtenContent = vi.mocked(writeFile).mock.calls[0]![1] as string;
+    const parsed = JSON.parse(writtenContent);
+    expect(parsed.skills).toEqual(['/path/to/skill1']);
+  });
+
+  test('overwrites existing fields when update contains the same key', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ skills: ['/old/skill'], network: { mode: 'allow' } }));
+
+    await kdnCli.updateWorkspaceConfig(CONFIG_DIR, { skills: ['/new/skill'] });
+
+    const writtenContent = vi.mocked(writeFile).mock.calls[0]![1] as string;
+    const parsed = JSON.parse(writtenContent);
+    expect(parsed.skills).toEqual(['/new/skill']);
+    expect(parsed.network).toEqual({ mode: 'allow' });
+  });
+
+  test('propagates non-ENOENT read errors', async () => {
+    const permError: NodeJS.ErrnoException = new Error('EACCES');
+    permError.code = 'EACCES';
+    vi.mocked(readFile).mockRejectedValue(permError);
+
+    await expect(kdnCli.updateWorkspaceConfig(CONFIG_DIR, { skills: [] })).rejects.toThrow('EACCES');
+  });
+
+  test('writes to correct path under configurationPath', async () => {
+    vi.mocked(readFile).mockRejectedValue(mockEnoent());
+
+    await kdnCli.updateWorkspaceConfig('/custom/config/path', { ports: [8080] });
+
+    expect(writeFile).toHaveBeenCalledWith(join('/custom/config/path', 'workspace.json'), expect.any(String), 'utf-8');
+  });
+});
+
 describe('list', () => {
   test('executes kdn workspace list and returns items', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
