@@ -28,7 +28,7 @@ test.use({
   mcpServers: process.env[MCP_SERVERS.github.envVarName] ? ['github'] : [],
 });
 
-test.describe('MCP Registry Management', { tag: '@smoke' }, () => {
+test.describe('MCP Registry Management', () => {
   test.beforeEach(async ({ page, navigationBar }) => {
     await waitForNavigationReady(page);
     await navigationBar.navigateToMCPPage();
@@ -55,6 +55,13 @@ test.describe('MCP Registry Management', { tag: '@smoke' }, () => {
 
     await mcpPage.openInstallTab();
     await installTab.verifyServerCountIsRestored(initialServerCount, SERVER_LIST_UPDATE_TIMEOUT);
+  });
+});
+
+test.describe('MCP Server Management', { tag: '@smoke' }, () => {
+  test.beforeEach(async ({ page, navigationBar }) => {
+    await waitForNavigationReady(page);
+    await navigationBar.navigateToMCPPage();
   });
 
   test('[MCP-02] Add and remove MCP server: verify server list updates accordingly', async ({
