@@ -140,28 +140,31 @@ jobs:
         shell: bash
         env:
           VITE_CI: 'true'
+          E2E_TEST_SCRIPT: ${{ inputs.test_script }}
+          E2E_INSTANCE: ${{ inputs.instance }}
+          E2E_MODE: ${{ inputs.mode }}
+          E2E_COMPILE_ARGS: ${{ inputs.compile_args }}
         run: |
           # Derive binary path from instance (OS and architecture)
-          INSTANCE="${{ inputs.instance }}"
-          if [[ "$INSTANCE" == *"windows"* ]]; then
-            if [[ "$INSTANCE" == *"arm"* ]]; then
+          if [[ "$E2E_INSTANCE" == *"windows"* ]]; then
+            if [[ "$E2E_INSTANCE" == *"arm"* ]]; then
               BINARY_PATH="./dist/win-arm64-unpacked/Kaiden.exe"
             else
               BINARY_PATH="./dist/win-unpacked/Kaiden.exe"
             fi
-          elif [[ "$INSTANCE" == *"ubuntu"* ]] || [[ "$INSTANCE" == *"linux"* ]]; then
+          elif [[ "$E2E_INSTANCE" == *"ubuntu"* ]] || [[ "$E2E_INSTANCE" == *"linux"* ]]; then
             BINARY_PATH="./dist/linux-unpacked/kaiden"
-          elif [[ "$INSTANCE" == *"macos"* ]]; then
+          elif [[ "$E2E_INSTANCE" == *"macos"* ]]; then
             BINARY_PATH="./dist/mac-arm64/Kaiden.app/Contents/MacOS/Kaiden"
           else
-            echo "::error::Unknown instance: $INSTANCE. Cannot determine binary path."
+            echo "::error::Unknown instance: $E2E_INSTANCE. Cannot determine binary path."
             exit 1
           fi
 
-          if [ "${{ inputs.mode }}" == "prod" ]; then
+          if [ "$E2E_MODE" == "prod" ]; then
             echo "Compiling Kaiden in production mode"
             export ELECTRON_ENABLE_INSPECT=true
-            pnpm compile:current ${{ inputs.compile_args }}
+            pnpm compile:current $E2E_COMPILE_ARGS
 
             path=$(realpath "$BINARY_PATH")
             echo "Kaiden built binary: $path"
@@ -172,18 +175,21 @@ jobs:
           # dbus-run-session provides an ephemeral bus; gnome-keyring-daemon
           # creates a "login" keyring unlocked with an empty password, which
           # becomes the default collection that kdn can write secrets to.
+          # PATH is re-exported so child processes (Electron -> spawn kdn)
+          # can resolve binaries installed in /usr/local/bin.
           if [ "$RUNNER_OS" == "Linux" ]; then
             dbus-run-session -- bash -c '
+              export PATH="/usr/local/bin:$PATH"
               echo "" | gnome-keyring-daemon --start --components=secrets --unlock --daemonize
-              dbus-send --session --dest=org.freedesktop.secrets \
+              dbus-send --session --print-reply --dest=org.freedesktop.secrets \
                 /org/freedesktop/secrets \
                 org.freedesktop.Secret.Service.SetAlias \
                 string:"default" \
                 objpath:"/org/freedesktop/secrets/collection/login"
-              pnpm ${{ inputs.test_script }}
+              pnpm $E2E_TEST_SCRIPT
             '
           else
-            pnpm ${{ inputs.test_script }}
+            pnpm $E2E_TEST_SCRIPT
           fi
 
       - name: Publish Test Report
