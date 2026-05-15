@@ -157,17 +157,12 @@ jobs:
           fi
 
           # On Linux, kdn CLI stores secrets via D-Bus Secret Service.
-          # dbus-run-session provides an ephemeral bus; gnome-keyring-daemon registers
-          # a Secret Service with a session collection (always unlocked).
-          # We then alias "default" → session so kdn writes to the unlocked collection.
+          # dbus-run-session provides an ephemeral bus; gnome-keyring-daemon
+          # creates a "login" keyring unlocked with an empty password, which
+          # becomes the default collection that kdn can write secrets to.
           if [ "$RUNNER_OS" == "Linux" ]; then
             dbus-run-session -- bash -c '
-              gnome-keyring-daemon --start --components=secrets --daemonize
-              dbus-send --session --dest=org.freedesktop.secrets \
-                /org/freedesktop/secrets \
-                org.freedesktop.Secret.Service.SetAlias \
-                string:"default" \
-                objpath:"/org/freedesktop/secrets/collection/session"
+              echo "" | gnome-keyring-daemon --start --components=secrets --unlock --daemonize
               pnpm ${{ inputs.test_script }}
             '
           else

@@ -89,6 +89,7 @@ const config: PlaywrightTestConfig & {
       use: {
         resource: 'ollama',
       },
+      testIgnore: podmanAvailable ? [] : ['**/*'],
     },
     {
       name: 'OpenShift-AI-Provider',

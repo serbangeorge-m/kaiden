@@ -22,7 +22,7 @@ import { expect, test } from '../../../fixtures/provider-fixtures';
 import { registerWorkspaceLifecycleTests } from './workspace-lifecycle-helper';
 
 test.describe
-  .serial('Claude agent workspace', { tag: '@smoke' }, () => {
+  .serial('Claude Code agent workspace with Anthropic model', { tag: '@smoke' }, () => {
     registerWorkspaceLifecycleTests(test, expect, {
       testIdPrefix: 'WKS-CLAUDE',
       workspaceName: 'claude-e2e-smoke',

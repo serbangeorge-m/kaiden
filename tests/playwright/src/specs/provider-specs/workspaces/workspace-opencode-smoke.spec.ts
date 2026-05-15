@@ -22,7 +22,7 @@ import { expect, test } from '../../../fixtures/provider-fixtures';
 import { registerWorkspaceLifecycleTests } from './workspace-lifecycle-helper';
 
 test.describe
-  .serial('OpenCode agent workspace with OpenAI', { tag: '@smoke' }, () => {
+  .serial('OpenCode agent workspace with OpenAI model', { tag: '@smoke' }, () => {
     registerWorkspaceLifecycleTests(test, expect, {
       testIdPrefix: 'WKS-OPENAI',
       workspaceName: 'opencode-e2e-smoke',
@@ -43,7 +43,7 @@ test.describe
   });
 
 test.describe
-  .serial('OpenCode agent workspace with Gemini', { tag: '@smoke' }, () => {
+  .serial('OpenCode agent workspace with Gemini model', { tag: '@smoke' }, () => {
     registerWorkspaceLifecycleTests(test, expect, {
       testIdPrefix: 'WKS-GEMINI',
       workspaceName: 'opencode-gemini-e2e-smoke',
