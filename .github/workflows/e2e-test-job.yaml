@@ -172,22 +172,22 @@ jobs:
           fi
 
           # On Linux, kdn CLI stores secrets via D-Bus Secret Service.
-          # dbus-run-session provides an ephemeral bus; gnome-keyring-daemon
-          # creates a "login" keyring unlocked with an empty password, which
-          # becomes the default collection that kdn can write secrets to.
-          # /usr/local/bin is appended (not prepended) to PATH so kdn is
-          # found without shadowing the Node 24 binary from actions/setup-node.
+          # We start gnome-keyring-daemon on the EXISTING systemd user
+          # session bus (not dbus-run-session) so Podman/crun can still
+          # reach systemd for cgroup management. The daemon creates a
+          # "login" keyring unlocked with an empty password, then we
+          # alias it as the default collection for kdn to write secrets to.
           if [ "$RUNNER_OS" == "Linux" ]; then
-            dbus-run-session -- bash -c '
-              export PATH="$PATH:/usr/local/bin"
-              echo "" | gnome-keyring-daemon --components=secrets --unlock --daemonize
-              dbus-send --session --print-reply --dest=org.freedesktop.secrets \
-                /org/freedesktop/secrets \
-                org.freedesktop.Secret.Service.SetAlias \
-                string:"default" \
-                objpath:"/org/freedesktop/secrets/collection/login"
-              pnpm $E2E_TEST_SCRIPT
-            '
+            if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+              export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+            fi
+            echo "" | gnome-keyring-daemon --components=secrets --unlock --daemonize
+            dbus-send --session --print-reply --dest=org.freedesktop.secrets \
+              /org/freedesktop/secrets \
+              org.freedesktop.Secret.Service.SetAlias \
+              string:"default" \
+              objpath:"/org/freedesktop/secrets/collection/login"
+            pnpm $E2E_TEST_SCRIPT
           else
             pnpm $E2E_TEST_SCRIPT
           fi
