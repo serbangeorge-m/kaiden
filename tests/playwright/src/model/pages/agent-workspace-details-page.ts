@@ -19,41 +19,26 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { TIMEOUTS } from 'src/model/core/types';
 
+import { AgentWorkspaceOverviewPage } from './agent-workspace-overview-page';
+import { AgentWorkspaceSettingsPage } from './agent-workspace-settings-page';
+import { AgentWorkspaceTerminalPage } from './agent-workspace-terminal-page';
 import { BasePage } from './base-page';
-
-export interface OverviewExpectations {
-  agentName?: string;
-  model?: string;
-  project?: string;
-  status?: string;
-  runtime?: string;
-  network?: string;
-  sandboxBadge?: string;
-  skillsCount?: number;
-  mcpServersCount?: number;
-  filesystemBadge?: string;
-  sourcePath?: string;
-}
 
 export class AgentWorkspaceDetailsPage extends BasePage {
   readonly header: Locator;
   readonly pageTabsRegion: Locator;
-  readonly tabContentRegion: Locator;
   readonly overviewTabLink: Locator;
   readonly terminalTabLink: Locator;
-  readonly terminalContainer: Locator;
-  readonly emptyTerminalMessage: Locator;
+  readonly settingsTabLink: Locator;
   readonly removeButton: Locator;
 
   constructor(page: Page) {
     super(page);
     this.header = this.page.getByRole('region', { name: 'header' });
     this.pageTabsRegion = this.page.getByRole('region', { name: 'Tabs' });
-    this.tabContentRegion = this.page.getByRole('region', { name: 'Tab Content' });
     this.overviewTabLink = this.pageTabsRegion.getByRole('link', { name: 'Overview' });
     this.terminalTabLink = this.pageTabsRegion.getByRole('link', { name: 'Terminal' });
-    this.terminalContainer = this.tabContentRegion.locator('.xterm-rows');
-    this.emptyTerminalMessage = this.tabContentRegion.getByText('Workspace is not running');
+    this.settingsTabLink = this.pageTabsRegion.getByRole('link', { name: 'Settings' });
     this.removeButton = this.header.getByRole('button', { name: 'Remove Workspace' });
   }
 
@@ -62,123 +47,19 @@ export class AgentWorkspaceDetailsPage extends BasePage {
     await expect(this.pageTabsRegion).toBeVisible();
   }
 
-  async openOverviewTab(): Promise<void> {
-    await expect(this.overviewTabLink).toBeVisible();
-    await this.overviewTabLink.click();
+  async openOverviewTab(): Promise<AgentWorkspaceOverviewPage> {
+    return this.openTab(this.overviewTabLink, AgentWorkspaceOverviewPage);
   }
 
-  async openTerminalTab(): Promise<void> {
-    await expect(this.terminalTabLink).toBeVisible();
-    await this.terminalTabLink.click();
+  async openTerminalTab(): Promise<AgentWorkspaceTerminalPage> {
+    return this.openTab(this.terminalTabLink, AgentWorkspaceTerminalPage);
   }
 
-  get agentName(): Locator {
-    return this.tabContentRegion.getByLabel('Agent name');
+  getTerminalPage(): AgentWorkspaceTerminalPage {
+    return new AgentWorkspaceTerminalPage(this.page);
   }
 
-  get modelLabel(): Locator {
-    return this.tabContentRegion.getByLabel('Model');
-  }
-
-  get projectLabel(): Locator {
-    return this.tabContentRegion.getByLabel('Project');
-  }
-
-  get sandboxBadge(): Locator {
-    return this.tabContentRegion.getByLabel('Sandbox status');
-  }
-
-  getDetailValue(label: string): Locator {
-    return this.tabContentRegion.getByLabel(label, { exact: true });
-  }
-
-  getCardBadge(cardName: string): Locator {
-    return this.tabContentRegion.getByLabel(`${cardName} count`);
-  }
-
-  getCardRegion(cardName: string): Locator {
-    return this.tabContentRegion.getByLabel(`${cardName} card`);
-  }
-
-  async verifyOverview(expected: OverviewExpectations): Promise<void> {
-    if (expected.agentName) {
-      await expect(this.agentName).toHaveText(expected.agentName);
-    }
-    if (expected.model) {
-      await expect(this.modelLabel).toBeVisible();
-      await expect(this.modelLabel).toContainText(expected.model);
-    }
-    if (expected.project) {
-      await expect(this.projectLabel).toContainText(expected.project);
-    }
-    if (expected.sandboxBadge) {
-      await expect(this.sandboxBadge).toContainText(expected.sandboxBadge);
-    }
-    if (expected.status) {
-      await expect(this.getDetailValue('Status')).toContainText(expected.status);
-    }
-    if (expected.runtime) {
-      await expect(this.getDetailValue('Runtime')).toContainText(expected.runtime);
-    }
-    if (expected.network) {
-      await expect(this.getDetailValue('Network')).toContainText(expected.network);
-    }
-    if (expected.skillsCount !== undefined) {
-      await expect(this.getCardBadge('Skills')).toHaveText(String(expected.skillsCount));
-    }
-    if (expected.mcpServersCount !== undefined) {
-      await expect(this.getCardBadge('MCP Servers')).toHaveText(String(expected.mcpServersCount));
-    }
-    if (expected.filesystemBadge) {
-      await expect(this.tabContentRegion.getByLabel('Filesystem mode')).toHaveText(expected.filesystemBadge);
-    }
-    if (expected.sourcePath) {
-      await expect(this.getCardRegion('Filesystem').getByText(expected.sourcePath)).toBeVisible();
-    }
-  }
-
-  async waitForTerminalContent(
-    textOrRegex: string | RegExp,
-    timeout: number = TIMEOUTS.WORKSPACE_READY,
-  ): Promise<void> {
-    await expect(this.terminalContainer).toContainText(textOrRegex, { timeout });
-  }
-
-  async getTerminalText(): Promise<string> {
-    return (await this.terminalContainer.textContent()) ?? '';
-  }
-
-  async sendPrompt(prompt: string): Promise<void> {
-    const textarea = this.tabContentRegion.locator('textarea.xterm-helper-textarea');
-    await expect(textarea).toBeAttached({ timeout: TIMEOUTS.SHORT });
-    await textarea.evaluate(el => (el as HTMLTextAreaElement).focus());
-
-    const contentBefore = await this.getTerminalText();
-    await this.page.keyboard.type(prompt, { delay: 50 });
-    await expect
-      .poll(() => this.getTerminalText(), {
-        timeout: TIMEOUTS.SHORT,
-        message: `Typed text "${prompt}" did not appear in the terminal`,
-      })
-      .not.toBe(contentBefore);
-
-    await this.page.keyboard.press('Enter');
-  }
-
-  async sendPromptAndWaitForResponse(options: {
-    prompt: string;
-    expectedResponse: string | RegExp;
-    timeout?: number;
-  }): Promise<void> {
-    const { prompt, expectedResponse, timeout = TIMEOUTS.MODEL_RESPONSE } = options;
-    await this.sendPrompt(prompt);
-    const contentAfterSubmit = await this.getTerminalText();
-    await expect
-      .poll(() => this.getTerminalText(), {
-        timeout,
-        message: `Terminal content did not change after pressing Enter`,
-      })
-      .not.toBe(contentAfterSubmit);
-    await this.waitForTerminalContent(expectedResponse, timeout);
+  async openSettingsTab(): Promise<AgentWorkspaceSettingsPage> {
+    return this.openTab(this.settingsTabLink, AgentWorkspaceSettingsPage);
   }
 }

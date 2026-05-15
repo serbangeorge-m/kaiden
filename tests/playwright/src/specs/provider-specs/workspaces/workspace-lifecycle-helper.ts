@@ -27,6 +27,7 @@ import {
   NETWORK_MODE,
   RUNTIME,
   SANDBOX_BADGE,
+  SETTINGS_SECTIONS,
   TIMEOUTS,
   WIZARD_STEP,
   WORKSPACE_STATUS,
@@ -94,7 +95,7 @@ export function registerWorkspaceLifecycleTests(
     await createPage.continueToStep(WIZARD_STEP.NETWORKING);
 
     await createPage.startWorkspace();
-    await expect(agentWorkspacesPage.heading).toBeVisible();
+    await expect(agentWorkspacesPage.heading).toBeVisible({ timeout: TIMEOUTS.WORKSPACE_READY });
   });
 
   test(`[${config.testIdPrefix}-02] Workspace appears with Running status`, async ({
@@ -128,8 +129,8 @@ export function registerWorkspaceLifecycleTests(
   }) => {
     await navigationBar.navigateToWorkspacesPage();
     const detailsPage = await agentWorkspacesPage.openWorkspaceDetails(config.workspaceName);
-    await detailsPage.openOverviewTab();
-    await detailsPage.verifyOverview({
+    const overviewPage = await detailsPage.openOverviewTab();
+    await overviewPage.verifyOverview({
       agentName: config.agent,
       ...(selectedModel ? { model: selectedModel } : {}),
       project: workingDir,
@@ -143,34 +144,48 @@ export function registerWorkspaceLifecycleTests(
     });
   });
 
-  test(`[${config.testIdPrefix}-05] Terminal shows agent is loaded`, async ({ navigationBar, agentWorkspacesPage }) => {
+  test(`[${config.testIdPrefix}-05] Settings tab displays workspace configuration`, async ({
+    navigationBar,
+    agentWorkspacesPage,
+  }) => {
+    await navigationBar.navigateToWorkspacesPage();
+    const detailsPage = await agentWorkspacesPage.openWorkspaceDetails(config.workspaceName);
+    const settingsPage = await detailsPage.openSettingsTab();
+    await settingsPage.verifySettings({
+      sections: SETTINGS_SECTIONS,
+      workspaceName: config.workspaceName,
+      workingDirectory: workingDir,
+    });
+  });
+
+  test(`[${config.testIdPrefix}-06] Terminal shows agent is loaded`, async ({ navigationBar, agentWorkspacesPage }) => {
     test.slow();
     await navigationBar.navigateToWorkspacesPage();
     const detailsPage = await agentWorkspacesPage.openWorkspaceTerminal(config.workspaceName);
-    await detailsPage.openTerminalTab();
+    const terminalPage = detailsPage.getTerminalPage();
     for (const pattern of config.terminalReadyPatterns) {
-      await detailsPage.waitForTerminalContent(pattern, TIMEOUTS.WORKSPACE_READY);
+      await terminalPage.waitForTerminalContent(pattern, TIMEOUTS.WORKSPACE_READY);
     }
   });
 
-  test(`[${config.testIdPrefix}-06] Sends a prompt and receives a response`, async ({
+  test(`[${config.testIdPrefix}-07] Sends a prompt and receives a response`, async ({
     navigationBar,
     agentWorkspacesPage,
   }) => {
     test.slow();
     await navigationBar.navigateToWorkspacesPage();
     const detailsPage = await agentWorkspacesPage.openWorkspaceTerminal(config.workspaceName);
-    await detailsPage.openTerminalTab();
+    const terminalPage = detailsPage.getTerminalPage();
 
-    await detailsPage.waitForTerminalContent(config.terminalReadyPatterns[0]!, TIMEOUTS.WORKSPACE_READY);
-    await detailsPage.sendPromptAndWaitForResponse({
+    await terminalPage.waitForTerminalContent(config.terminalReadyPatterns[0]!, TIMEOUTS.WORKSPACE_READY);
+    await terminalPage.sendPromptAndWaitForResponse({
       prompt: config.promptTest.prompt,
       expectedResponse: config.promptTest.expectedResponse,
       timeout: TIMEOUTS.MODEL_RESPONSE,
     });
   });
 
-  test(`[${config.testIdPrefix}-07] Removes the workspace`, async ({ navigationBar, agentWorkspacesPage }) => {
+  test(`[${config.testIdPrefix}-08] Removes the workspace`, async ({ navigationBar, agentWorkspacesPage }) => {
     test.slow();
     await navigationBar.navigateToWorkspacesPage();
     await agentWorkspacesPage.removeWorkspace(config.workspaceName);
@@ -180,7 +195,7 @@ export function registerWorkspaceLifecycleTests(
     }
   });
 
-  test(`[${config.testIdPrefix}-08] Stat cards reflect workspace removal`, async ({
+  test(`[${config.testIdPrefix}-09] Stat cards reflect workspace removal`, async ({
     navigationBar,
     agentWorkspacesPage,
   }) => {

@@ -238,6 +238,18 @@ export const RUNTIME = {
   PODMAN: 'podman',
 } as const;
 
+export const SETTINGS_SECTION = {
+  GENERAL: 'General',
+  AGENT_SKILLS: 'Agent Skills',
+  MCP_SERVERS: 'MCP Servers',
+  KNOWLEDGE: 'Knowledge',
+  FILE_ACCESS: 'File Access',
+  NETWORK: 'Network',
+  ADVANCED: 'Advanced',
+} as const;
+export const SETTINGS_SECTIONS = Object.values(SETTINGS_SECTION);
+export type SettingsSection = (typeof SETTINGS_SECTION)[keyof typeof SETTINGS_SECTION];
+
 export const TIMEOUTS = {
   PAGE_LOAD: 90_000,
   NON_DEVTOOLS_WINDOW: 60_000,
