@@ -303,11 +303,11 @@ function setupTestConfigDir(electronEnv: Record<string, string>): void {
   // realpathSync resolves macOS /var → /private/var symlinks so all paths match what the Goose CLI returns.
   const realTestDataDir = realpathSync(testDataDir);
   electronEnv.KAIDEN_HOME_DIR = realTestDataDir;
-  // Redirect home-dir env vars to the isolated temp dir so homedir() and Goose CLI use it instead of ~/.config/goose.
-  electronEnv.HOME = realTestDataDir;
-  // Do NOT override USERPROFILE on Windows — Electron uses it to derive AppData paths and
-  // overriding it causes singleton-lock conflicts. Goose is not supported on Windows GHA runners anyway.
+  // On non-Windows platforms, redirect HOME so homedir() and Goose CLI use the isolated dir.
+  // Do NOT override HOME/USERPROFILE on Windows — Electron/Chromium derives AppData and
+  // user-data-dir paths from them; overriding causes singleton-lock conflicts and GPU process hangs.
   if (process.platform !== 'win32') {
+    electronEnv.HOME = realTestDataDir;
     electronEnv.USERPROFILE = realTestDataDir;
   }
   // On Linux, LinuxXDGDirectories prefers XDG_CONFIG_HOME/XDG_DATA_HOME over homedir() — point them at the temp dir.
@@ -332,8 +332,15 @@ function createLaunchConfig(): Parameters<typeof electron.launch>[0] {
 
   setupTestConfigDir(electronEnv);
 
-  const args = ['--no-sandbox'];
-  if (process.platform !== 'linux') {
+  const args: string[] = [
+    '--no-sandbox',
+    '--disable-gpu',
+    '--disable-gpu-compositing',
+    '--disable-gpu-sandbox',
+    '--enable-logging=stderr',
+    '--v=1',
+  ];
+  if (process.platform === 'darwin') {
     args.push('--use-mock-keychain');
   }
 
@@ -343,22 +350,66 @@ function createLaunchConfig(): Parameters<typeof electron.launch>[0] {
       args,
       env: electronEnv,
       recordVideo,
+      timeout: 90_000,
     };
   }
 
   return {
     args: ['.', ...args],
-    env: {
-      ...electronEnv,
-      ELECTRON_IS_DEV: '1',
-    },
+    env: electronEnv,
     cwd: resolve(__dirname, '../../../..'),
     recordVideo,
+    timeout: 90_000,
   };
 }
 
 export async function launchElectronApp(): Promise<ElectronApplication> {
-  return electron.launch(createLaunchConfig());
+  const electronApp = await electron.launch(createLaunchConfig());
+
+  // Capture stderr immediately — before any window arrives — so renderer/GPU spawn failures are visible
+  electronApp.process().stderr?.on('data', (data: Buffer) => {
+    console.log(`[ELECTRON STDERR] ${data.toString().trimEnd()}`);
+  });
+  electronApp.process().stdout?.on('data', (data: Buffer) => {
+    const line = data.toString().trimEnd();
+    if (line.includes('ERROR') || line.includes('FATAL') || line.includes('gpu')) {
+      console.log(`[ELECTRON STDOUT] ${line}`);
+    }
+  });
+
+  // Log subprocess death and navigation failures from main process
+  await electronApp.evaluate(({ app, BrowserWindow }) => {
+    app.on('child-process-gone', (_event, details) => {
+      console.error(`[child-process-gone] type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`);
+    });
+    app.on('render-process-gone', (_event, _wc, details) => {
+      console.error(`[render-process-gone] reason=${details.reason} exitCode=${details.exitCode}`);
+    });
+
+    // Log initial window state for diagnostics
+    const wins = BrowserWindow.getAllWindows();
+    console.log(`[launchElectronApp] windows=${wins.length}`);
+    for (const win of wins) {
+      const wc = win.webContents;
+      console.log(
+        `[launchElectronApp] win id=${win.id} url="${wc.getURL()}" loading=${wc.isLoading()} crashed=${wc.isCrashed()}`,
+      );
+      wc.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+        console.error(`[did-fail-load] code=${errorCode} desc="${errorDescription}" url="${validatedURL}"`);
+      });
+      wc.on('did-start-navigation', (_event, url) => {
+        console.log(`[did-start-navigation] url="${url}"`);
+      });
+      wc.on('did-finish-load', () => {
+        console.log(`[did-finish-load] url="${wc.getURL()}"`);
+      });
+      wc.on('dom-ready', () => {
+        console.log(`[dom-ready] url="${wc.getURL()}"`);
+      });
+    }
+  });
+
+  return electronApp;
 }
 
 export async function getFirstPage(electronApp: ElectronApplication): Promise<Page> {
@@ -381,15 +432,31 @@ export async function getFirstPage(electronApp: ElectronApplication): Promise<Pa
     }
   }
 
-  await page.waitForLoadState('load', { timeout: TIMEOUTS.PAGE_LOAD });
+  // Capture renderer console output
+  page.on('console', msg => console.log(`[renderer ${msg.type()}] ${msg.text()}`));
+
+  // Log current page state for diagnostics
+  const currentUrl = page.url();
+  console.log(`[getFirstPage] got page, url="${currentUrl}"`);
+
+  // Wait for the page to have parsed HTML (fires much earlier than 'load')
+  // If this doesn't fire within 30s, the renderer never loaded content
+  try {
+    await page.waitForLoadState('domcontentloaded', { timeout: 30_000 });
+  } catch {
+    const url = page.url();
+    // Query main process state at failure time for diagnostics
+    const diag = await electronApp.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (!win) return 'no windows';
+      const wc = win.webContents;
+      return `url="${wc.getURL()}" loading=${wc.isLoading()} crashed=${wc.isCrashed()}`;
+    });
+    console.error(`[getFirstPage] domcontentloaded never fired. page.url="${url}" mainProcess: ${diag}`);
+    throw new Error(`Electron window has no content (url="${url}"). The renderer failed to load. Diag: ${diag}`);
+  }
 
   await waitForAppReady(page);
-
-  page.on('console', msg => console.log(`[${msg.type()}] ${msg.text()}`));
-
-  electronApp.process().stderr?.on('data', data => {
-    console.log(`STDERR: ${data}`);
-  });
 
   return page;
 }

@@ -1,0 +1,158 @@
+#
+# Copyright (C) 2026 Red Hat, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: Setup Ollama (Remote Windows)
+description: Install Ollama on a remote Windows host via SSH, pull a model, and start serving. Sets OLLAMA_ENABLED on success.
+
+inputs:
+  host:
+    description: 'Remote Windows host address'
+    required: true
+  username:
+    description: 'SSH username for the remote host'
+    required: true
+  ssh-key-path:
+    description: 'Path to the SSH private key'
+    required: true
+  model:
+    description: 'Model to pull and serve (e.g., granite3.2:2b)'
+    required: true
+  second_model:
+    description: 'Optional second inference model to pull (e.g., granite3.1-dense:2b).'
+    required: false
+    default: ''
+
+outputs:
+  enabled:
+    description: "'true' if the primary model is ready, 'false' otherwise"
+    value: ${{ steps.setup.outputs.enabled }}
+  second_model_enabled:
+    description: "'true' if the second model was pulled successfully, 'false' or empty otherwise"
+    value: ${{ steps.setup.outputs.second_model_enabled }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install and setup Ollama on remote Windows host
+      id: setup
+      shell: bash
+      run: |
+        SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=1200 -i ${{ inputs.ssh-key-path }}"
+        HOST="${{ inputs.username }}@${{ inputs.host }}"
+
+        run_remote() {
+          local encoded
+          encoded=$(printf '%s' "$1" | iconv -t UTF-16LE | base64 -w 0)
+          ssh $SSH_OPTS "$HOST" "powershell -NoProfile -EncodedCommand $encoded"
+        }
+
+        echo "::group::Install Ollama and start server"
+        # Install, persist PATH, start server, and wait for readiness in a single SSH session
+        if ! run_remote '
+          $ProgressPreference = "SilentlyContinue"
+          Write-Host "Downloading Ollama installer..."
+          $installer = Join-Path $env:TEMP "OllamaSetup.exe"
+          Invoke-WebRequest -Uri "https://ollama.com/download/OllamaSetup.exe" -OutFile $installer -UseBasicParsing
+          Write-Host "Installing Ollama..."
+          $proc = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT","/NORESTART" -PassThru
+          if (-not $proc.WaitForExit(300000)) {
+            Write-Host "Ollama installer hung after 5 minutes, killing..."
+            $proc.Kill()
+          }
+          Write-Host "Installer exited with code: $($proc.ExitCode)"
+
+          $ollamaDir = Join-Path $env:LOCALAPPDATA "Programs\Ollama"
+          $env:PATH = "$ollamaDir;$env:PATH"
+          [System.Environment]::SetEnvironmentVariable("PATH", $env:PATH, [System.EnvironmentVariableTarget]::User)
+          Write-Host "Ollama installed, starting server..."
+
+          Start-Process -FilePath (Join-Path $ollamaDir "ollama.exe") -ArgumentList "serve" -WindowStyle Hidden
+
+          for ($i = 1; $i -le 30; $i++) {
+            if (ollama list 2>$null) {
+              Write-Host "Ollama server is ready"
+              exit 0
+            }
+            Write-Host "Waiting for Ollama server... (attempt $i/30)"
+            Start-Sleep -Seconds 2
+          }
+          Write-Host "Ollama server failed to start"
+          exit 1
+        '; then
+          echo "::warning::Ollama server failed to start on remote host"
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+          exit 0
+        fi
+        echo "::endgroup::"
+
+        pull_model() {
+          local model="$1"
+          echo "::group::Pull model: $model"
+
+          if run_remote '
+            $model = "'"$model"'"
+            $ollamaDir = Join-Path $env:LOCALAPPDATA "Programs\Ollama"
+            if (Test-Path $ollamaDir) { $env:PATH = "$ollamaDir;$env:PATH" }
+
+            for ($attempt = 1; $attempt -le 5; $attempt++) {
+              Write-Host "Pulling $model (attempt $attempt/5)..."
+              if (ollama list 2>$null | Select-String $model) {
+                Write-Host "Model $model is already available"
+                exit 0
+              }
+              ollama pull $model 2>&1
+              if (ollama list 2>$null | Select-String $model) {
+                Write-Host "Model $model is ready"
+                exit 0
+              }
+              if ($attempt -lt 5) {
+                $wait = $attempt * 10
+                Write-Host "Pull failed, retrying in $wait seconds..."
+                Start-Sleep -Seconds $wait
+              }
+            }
+            Write-Host "Failed to pull $model after 5 attempts"
+            exit 1
+          '; then
+            echo "::endgroup::"
+            return 0
+          fi
+
+          echo "::endgroup::"
+          return 1
+        }
+
+        # Pull primary model
+        if pull_model "${{ inputs.model }}"; then
+          echo "OLLAMA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::Failed to pull ${{ inputs.model }} after 5 attempts - Ollama workspace tests will be skipped"
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Pull second model if specified
+        if [ -n "${{ inputs.second_model }}" ]; then
+          if pull_model "${{ inputs.second_model }}"; then
+            echo "second_model_enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Failed to pull ${{ inputs.second_model }} after 5 attempts - second model tests will be skipped"
+            echo "second_model_enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+        fi

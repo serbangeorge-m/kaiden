@@ -1,0 +1,212 @@
+#
+# Copyright (C) 2026 Red Hat, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: Setup RamaLama (Remote Windows)
+description: Install RamaLama on a remote Windows host via SSH, pull a model, and serve it via Podman. Requires Podman Machine to already be running. Sets RAMALAMA_ENABLED on success.
+
+inputs:
+  host:
+    description: 'Remote Windows host address'
+    required: true
+  username:
+    description: 'SSH username for the remote host'
+    required: true
+  ssh-key-path:
+    description: 'Path to the SSH private key'
+    required: true
+  model:
+    description: 'Model to pull and serve (e.g., granite3.2:2b)'
+    required: true
+  ramalama-version:
+    description: 'RamaLama version constraint for pip install'
+    required: false
+    default: '>=0.1.0,<0.17.0'
+  port:
+    description: 'Port to serve the model on'
+    required: false
+    default: '8080'
+
+outputs:
+  enabled:
+    description: "'true' if the RamaLama API became ready, 'false' otherwise"
+    value: ${{ steps.setup.outputs.enabled }}
+  container_id:
+    description: 'Podman container ID of the running RamaLama server'
+    value: ${{ steps.setup.outputs.container_id }}
+  load_time:
+    description: 'Seconds elapsed from serve start to API ready'
+    value: ${{ steps.setup.outputs.load_time }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install and setup RamaLama on remote Windows host
+      id: setup
+      shell: bash
+      run: |
+        SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=1200 -i ${{ inputs.ssh-key-path }}"
+        HOST="${{ inputs.username }}@${{ inputs.host }}"
+
+        run_remote() {
+          local encoded
+          encoded=$(printf '%s' "$1" | iconv -t UTF-16LE | base64 -w 0)
+          ssh $SSH_OPTS "$HOST" "powershell -NoProfile -EncodedCommand $encoded"
+        }
+
+        echo "::group::Verify Python environment"
+        if ! run_remote '
+          $pythonDirs = @(
+            "$env:LOCALAPPDATA\Programs\Python\Python312",
+            "C:\Program Files\Python312",
+            "C:\Python312"
+          )
+          $found = $false
+          foreach ($p in $pythonDirs) {
+            if (Test-Path "$p\python.exe") {
+              $env:PATH = "$p;$p\Scripts;$env:PATH"
+              [System.Environment]::SetEnvironmentVariable("PATH", $env:PATH, [System.EnvironmentVariableTarget]::Process)
+              & "$p\python.exe" --version
+              $found = $true
+              break
+            }
+          }
+          if (-not $found) { exit 1 }
+        '; then
+          echo "::warning::Python is not available on the remote host - RamaLama tests will be skipped"
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Install RamaLama and pull model"
+        if ! run_remote '
+          $pythonPaths = @(
+            "$env:LOCALAPPDATA\Programs\Python\Python312",
+            "$env:LOCALAPPDATA\Programs\Python\Python312\Scripts",
+            "C:\Program Files\Python312",
+            "C:\Program Files\Python312\Scripts",
+            "C:\Python312",
+            "C:\Python312\Scripts"
+          )
+          foreach ($p in $pythonPaths) {
+            if (Test-Path $p) { $env:PATH = "$p;$env:PATH" }
+          }
+          $podmanDir = "C:\Program Files\RedHat\Podman"
+          if (Test-Path $podmanDir) { $env:PATH = "$podmanDir;$env:PATH" }
+
+          pip install "ramalama${{ inputs.ramalama-version }}"
+          ramalama version 2>$null; if ($LASTEXITCODE -ne 0) { ramalama --version 2>$null }
+
+          $env:RAMALAMA_CONTAINER_ENGINE = "podman"
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            Write-Host "Pulling ollama://${{ inputs.model }} (attempt $attempt/5)..."
+            ramalama pull "ollama://${{ inputs.model }}" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "Model pulled successfully"
+              exit 0
+            }
+            if ($attempt -lt 5) {
+              $wait = $attempt * 15
+              Write-Host "Pull failed, retrying in $wait seconds..."
+              Start-Sleep -Seconds $wait
+            }
+          }
+          Write-Host "Failed to pull model after 5 attempts"
+          exit 1
+        '; then
+          echo "::warning::Failed to install/pull RamaLama - tests will be skipped"
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Serve RamaLama model and wait for readiness"
+        SERVE_RESULT=$(run_remote '
+          $ProgressPreference = "SilentlyContinue"
+          $pythonPaths = @(
+            "$env:LOCALAPPDATA\Programs\Python\Python312",
+            "$env:LOCALAPPDATA\Programs\Python\Python312\Scripts",
+            "C:\Program Files\Python312",
+            "C:\Program Files\Python312\Scripts",
+            "C:\Python312",
+            "C:\Python312\Scripts"
+          )
+          foreach ($p in $pythonPaths) {
+            if (Test-Path $p) { $env:PATH = "$p;$env:PATH" }
+          }
+          $podmanDir = "C:\Program Files\RedHat\Podman"
+          if (Test-Path $podmanDir) { $env:PATH = "$podmanDir;$env:PATH" }
+          $env:RAMALAMA_CONTAINER_ENGINE = "podman"
+          ramalama serve --detach --port ${{ inputs.port }} "ollama://${{ inputs.model }}" 2>&1
+
+          Start-Sleep -Seconds 5
+
+          $containerId = podman ps -a --filter "label=ramalama" --format "{{.ID}}" | Select-Object -First 1
+          if (-not $containerId) { $containerId = podman ps -a --last 1 --format "{{.ID}}" }
+
+          $startTime = Get-Date
+          for ($i = 1; $i -le 60; $i++) {
+            try {
+              Invoke-WebRequest -Uri "http://localhost:${{ inputs.port }}/v1/models" -UseBasicParsing -ErrorAction Stop | Out-Null
+              $elapsed = [math]::Round(((Get-Date) - $startTime).TotalSeconds)
+              Write-Output "READY|$containerId|$elapsed"
+              exit 0
+            } catch {}
+
+            if ($i % 10 -eq 0) {
+              Write-Host "=== Container status (attempt $i/60) ==="
+              podman ps -a --filter "id=$containerId" 2>$null
+              $exists = podman ps -a --filter "id=$containerId" --format "{{.ID}}" 2>$null
+              if (-not $exists) {
+                Write-Host "Container $containerId disappeared"
+                break
+              }
+              Write-Host "=== Recent logs ==="
+              podman logs --tail 20 $containerId 2>&1
+            }
+
+            Write-Host "Waiting for RamaLama API... (attempt $i/60)"
+            Start-Sleep -Seconds 2
+          }
+
+          Write-Host "=== Full container logs ==="
+          if ($containerId) { podman logs $containerId 2>&1 }
+          Write-Host "=== All containers ==="
+          podman ps -a
+          Write-Output "FAILED|$containerId|0"
+          exit 1
+        ' 2>&1 | tr -d '\r') || true
+
+        IFS='|' read -r STATUS CONTAINER_ID LOAD_TIME < <(echo "$SERVE_RESULT" | grep -E '^(READY|FAILED)\|' | tail -1)
+
+        # Print remote output for CI visibility (excluding the structured line)
+        echo "$SERVE_RESULT" | grep -v '^READY\|^FAILED' || true
+
+        if [ "$STATUS" == "READY" ]; then
+          echo "RamaLama API is ready (load time: ${LOAD_TIME}s)"
+          echo "container_id=$CONTAINER_ID" >> "$GITHUB_OUTPUT"
+          echo "RAMALAMA_CONTAINER_ID=$CONTAINER_ID" >> "$GITHUB_ENV"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "load_time=${LOAD_TIME}" >> "$GITHUB_OUTPUT"
+          echo "RAMALAMA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RAMALAMA_LOAD_TIME=${LOAD_TIME}" >> "$GITHUB_ENV"
+        else
+          echo "::error::RamaLama API failed to become ready after 120 seconds"
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::warning::RamaLama tests will be skipped"
+        fi
+        echo "::endgroup::"

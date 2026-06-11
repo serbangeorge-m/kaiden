@@ -1,0 +1,153 @@
+#
+# Copyright (C) 2026 Red Hat, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: Setup Python (Remote Windows)
+description: Install Python on a remote Windows host via SSH. Required for node-gyp native module rebuilds (electron-builder install-app-deps).
+
+inputs:
+  host:
+    description: 'Remote Windows host address'
+    required: true
+  username:
+    description: 'SSH username for the remote host'
+    required: true
+  ssh-key-path:
+    description: 'Path to the SSH private key'
+    required: true
+  python-version:
+    description: 'Python version to install'
+    required: false
+    default: '3.12.10'
+
+outputs:
+  enabled:
+    description: "'true' if Python is available, 'false' otherwise"
+    value: ${{ steps.setup.outputs.enabled }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Python on remote Windows host
+      id: setup
+      shell: bash
+      run: |
+        SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=1200 -i ${{ inputs.ssh-key-path }}"
+        HOST="${{ inputs.username }}@${{ inputs.host }}"
+
+        run_remote() {
+          local encoded
+          encoded=$(printf '%s' "$1" | iconv -t UTF-16LE | base64 -w 0)
+          ssh $SSH_OPTS "$HOST" "powershell -NoProfile -EncodedCommand $encoded"
+        }
+
+        PYTHON_VERSION="${{ inputs.python-version }}"
+
+        PYTHON_MAJOR_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f1,2 | tr -d '.')
+
+        echo "::group::Check if Python is already installed"
+        if run_remote '
+          $searchPaths = @(
+            "$env:LOCALAPPDATA\Programs\Python\Python'"$PYTHON_MAJOR_MINOR"'",
+            "C:\Python'"$PYTHON_MAJOR_MINOR"'",
+            "C:\Program Files\Python'"$PYTHON_MAJOR_MINOR"'"
+          )
+          foreach ($p in $searchPaths) {
+            if (Test-Path "$p\python.exe") {
+              & "$p\python.exe" --version
+              exit 0
+            }
+          }
+          exit 1
+        '; then
+          echo "Python already available on remote host"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+          exit 0
+        fi
+        echo "Python not found, installing..."
+        echo "::endgroup::"
+
+        echo "::group::Install Python ${PYTHON_VERSION}"
+        if ! run_remote '
+          $ProgressPreference = "SilentlyContinue"
+          $version = "'"$PYTHON_VERSION"'"
+          $installer = Join-Path $env:TEMP "python-installer.exe"
+          $url = "https://www.python.org/ftp/python/$version/python-$version-amd64.exe"
+
+          Write-Host "Downloading Python $version from $url..."
+          Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Host "Installing Python $version (per-user, attempt $attempt/3)..."
+            $proc = Start-Process -FilePath $installer -ArgumentList "/quiet","InstallAllUsers=0","Include_pip=1","Include_launcher=0" -Wait -PassThru
+            Write-Host "Installer exited with code: $($proc.ExitCode)"
+            if ($proc.ExitCode -eq 0) { break }
+            if ($proc.ExitCode -eq 1618 -and $attempt -lt 3) {
+              Write-Host "Windows Installer busy (code 1618), waiting 30s before retry..."
+              Start-Sleep -Seconds 30
+            }
+          }
+
+          # Disable Windows App Execution Aliases that intercept python.exe
+          $aliasPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps\python.exe"
+          if (Test-Path $aliasPath) { Remove-Item $aliasPath -Force -ErrorAction SilentlyContinue }
+          $alias3Path = "$env:LOCALAPPDATA\Microsoft\WindowsApps\python3.exe"
+          if (Test-Path $alias3Path) { Remove-Item $alias3Path -Force -ErrorAction SilentlyContinue }
+
+          # Find the installed Python — check all likely per-user locations
+          $majorMinor = ($version -split "\.")[0..1] -join ""
+          $searchPaths = @(
+            "$env:LOCALAPPDATA\Programs\Python\Python$majorMinor",
+            "$env:APPDATA\Python\Python$majorMinor",
+            "C:\Python$majorMinor",
+            "C:\Program Files\Python$majorMinor"
+          )
+          $pythonDir = ""
+          foreach ($p in $searchPaths) {
+            if (Test-Path "$p\python.exe") {
+              $pythonDir = $p
+              Write-Host "Found Python at: $p"
+              break
+            }
+          }
+          if (-not $pythonDir) {
+            Write-Host "Python not found in any expected location after install"
+            Write-Host "Searching for python.exe..."
+            Get-ChildItem -Path "$env:LOCALAPPDATA\Programs\Python" -Recurse -Filter "python.exe" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
+            exit 1
+          }
+
+          # Persist for future SSH sessions: set PYTHON env var (node-gyp checks this first) and update PATH
+          [System.Environment]::SetEnvironmentVariable("PYTHON", "$pythonDir\python.exe", [System.EnvironmentVariableTarget]::User)
+          $env:PATH = "$pythonDir;$pythonDir\Scripts;$env:PATH"
+          [System.Environment]::SetEnvironmentVariable("PATH", $env:PATH, [System.EnvironmentVariableTarget]::User)
+
+          # Verify using the full path
+          & "$pythonDir\python.exe" --version
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Python verification failed"
+            exit 1
+          }
+          Write-Host "Python installed successfully"
+        '; then
+          echo "::warning::Failed to install Python on remote host - native module rebuilds may fail"
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+          exit 0
+        fi
+        echo "enabled=true" >> "$GITHUB_OUTPUT"
+        echo "::endgroup::"

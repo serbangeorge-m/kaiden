@@ -89,8 +89,11 @@ const config: PlaywrightTestConfig & {
       use: {
         // Auto-detected provider makes resourceSetup a no-op; workspace tests manage their own providers
         resource: 'ollama',
+        trace: 'retain-on-failure',
+        video: 'retain-on-failure',
+        screenshot: 'on',
       },
-      testIgnore: podmanAvailable && !process.env.CI ? [] : ['**/*'],
+      testIgnore: podmanAvailable && (!process.env.CI || process.env.WORKSPACE_TESTS_CI) ? [] : ['**/*'],
     },
     {
       name: 'OpenShift-AI-Provider',
