@@ -53,7 +53,6 @@
     "test:e2e:run": "xvfb-maybe --auto-servernum --server-args='-screen 0 1280x960x24' -- npx playwright test -c tests/playwright/playwright.config.ts",
     "test:e2e:smoke": "pnpm run test:e2e:build && xvfb-maybe --auto-servernum --server-args='-screen 0 1280x960x24' -- npx playwright test -c tests/playwright/playwright.config.ts --grep @smoke",
     "test:e2e:workspaces": "pnpm run test:e2e:build && pnpm run test:e2e:workspaces:run",
-    "test:e2e:workspaces:prod": "pnpm run compile && pnpm run test:e2e:workspaces:run",
     "test:e2e:workspaces:run": "xvfb-maybe --auto-servernum --server-args='-screen 0 1280x960x24' -- npx playwright test -c tests/playwright/playwright.config.ts --project=Workspace-Provider workspaces",
     "test:e2e:workspaces:claude": "xvfb-maybe --auto-servernum --server-args='-screen 0 1280x960x24' -- npx playwright test -c tests/playwright/playwright.config.ts --project=Workspace-Provider workspaces/workspace-claude-smoke",
     "test:e2e:workspaces:opencode": "xvfb-maybe --auto-servernum --server-args='-screen 0 1280x960x24' -- npx playwright test -c tests/playwright/playwright.config.ts --project=Workspace-Provider workspaces/workspace-opencode-smoke",

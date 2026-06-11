@@ -34,7 +34,6 @@ on:
         type: choice
         options:
           - 'test:e2e:workspaces'
-          - 'test:e2e:workspaces:prod'
           - 'test:e2e:workspaces:claude'
           - 'test:e2e:workspaces:opencode'
           - 'test:e2e:workspaces:goose'

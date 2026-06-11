@@ -337,8 +337,8 @@ function createLaunchConfig(): Parameters<typeof electron.launch>[0] {
     '--disable-gpu',
     '--disable-gpu-compositing',
     '--disable-gpu-sandbox',
-    '--enable-logging=stderr',
-    '--v=1',
+    '--use-gl=angle',
+    '--use-angle=swiftshader',
   ];
   if (process.platform === 'darwin') {
     args.push('--use-mock-keychain');
