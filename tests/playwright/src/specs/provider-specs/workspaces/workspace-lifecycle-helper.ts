@@ -69,18 +69,18 @@ export function registerWorkspaceLifecycleTests(
   let workingDir: string | undefined;
   let countsBefore: { activeSessions: number; totalSessions: number; configuredAgents: number };
 
-  test.beforeAll(async ({ navigationBar }) => {
+  test.beforeAll(async ({ workerNavigationBar }) => {
     if (config.requiredResource) {
       const provider = PROVIDERS[config.requiredResource];
       if (!('autoDetected' in provider && provider.autoDetected)) {
-        const settingsPage = await navigationBar.navigateToSettingsPage();
+        const settingsPage = await workerNavigationBar.navigateToSettingsPage();
         await settingsPage.createResource(config.requiredResource, process.env[provider.envVarName]!);
       }
     }
     workingDir = mkdtempSync(join(homedir(), '.kdn-e2e-'));
   });
 
-  test.afterAll(async ({ navigationBar }) => {
+  test.afterAll(async ({ workerNavigationBar }) => {
     if (workingDir) {
       rmSync(workingDir, { recursive: true, force: true });
     }
@@ -88,7 +88,7 @@ export function registerWorkspaceLifecycleTests(
       const provider = PROVIDERS[config.requiredResource];
       if (!('autoDetected' in provider && provider.autoDetected)) {
         try {
-          const settingsPage = await navigationBar.navigateToSettingsPage();
+          const settingsPage = await workerNavigationBar.navigateToSettingsPage();
           await settingsPage.deleteResource(config.requiredResource);
         } catch (error) {
           console.error(`Failed to delete ${config.requiredResource} resource:`, error);

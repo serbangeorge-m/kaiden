@@ -17,7 +17,7 @@
  ***********************************************************************/
 
 /** biome-ignore-all lint/correctness/noEmptyPattern: Playwright fixture pattern requires empty object when no dependencies are needed */
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,11 +36,22 @@ import { SkillsPage } from 'src/model/pages/skills-page';
 
 import { waitForAppReady } from '../utils/app-ready';
 import { saveTestArtifacts } from '../utils/test-artifacts';
+import { launchCdpElectronApp, shouldLaunchViaCdp } from './cdp-electron-app';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const repoRoot = resolve(__dirname, '../../../..');
 const DEVTOOLS_URL_PREFIX = 'devtools://';
 const isProductionMode = !!process.env.KAIDEN_BINARY;
+const isBootstrapDebug = process.env.KAIDEN_E2E_BOOTSTRAP_DEBUG === 'true';
+const CDP_POLL_INTERVAL_MS = 250;
+let startupDiagnosticsLogPath: string | undefined;
+
+function bootstrapLog(message: string): void {
+  if (isBootstrapDebug) {
+    console.log(`[bootstrap] ${message}`);
+  }
+}
 
 export interface ElectronFixtures {
   electronApp: ElectronApplication;
@@ -161,12 +172,14 @@ export const workerTest = test.extend<ElectronFixtures, WorkerElectronFixtures>(
   workerPage: [
     async ({ workerElectronApp }, use): Promise<void> => {
       const page = await getFirstPage(workerElectronApp);
-      await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
+      const context = page.context();
+      if (!shouldLaunchViaCdp()) {
+        await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+      }
       await use(page);
-      await page
-        .context()
-        .tracing.stop()
-        .catch(() => {});
+      if (!shouldLaunchViaCdp()) {
+        await context.tracing.stop().catch(() => {});
+      }
     },
     { scope: 'worker' },
   ],
@@ -176,8 +189,17 @@ export const workerTest = test.extend<ElectronFixtures, WorkerElectronFixtures>(
   },
 
   page: async ({ workerPage }, use, testInfo): Promise<void> => {
-    await workerPage.context().tracing.startChunk();
-    await use(workerPage);
+    const context = workerPage.context();
+    if (!shouldLaunchViaCdp()) {
+      await context.tracing.startChunk();
+      try {
+        await use(workerPage);
+      } finally {
+        await context.tracing.stopChunk().catch(() => {});
+      }
+    } else {
+      await use(workerPage);
+    }
     await saveTestArtifacts(workerPage, testInfo);
   },
 });
@@ -186,47 +208,83 @@ function isDevToolsWindow(url: string): boolean {
   return url.startsWith(DEVTOOLS_URL_PREFIX);
 }
 
-function filterNonDevToolsWindows(windows: Page[]): Page[] {
-  return windows.filter(w => !isDevToolsWindow(w.url()));
+export async function getDevModeWindow(electronApp: ElectronApplication): Promise<Page> {
+  return waitForCdpReadyPage(electronApp);
 }
 
-export async function getDevModeWindow(
-  electronApp: ElectronApplication,
-  retries = TIMEOUTS.MAX_RETRIES,
-): Promise<Page> {
-  let lastError: Error | unknown;
+async function isPageCdpReady(page: Page): Promise<boolean> {
+  if (page.isClosed()) {
+    return false;
+  }
+  try {
+    return await page.evaluate(() => {
+      return (
+        document.readyState === 'interactive' ||
+        document.readyState === 'complete' ||
+        document.querySelector('main') !== null
+      );
+    });
+  } catch {
+    return false;
+  }
+}
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const existingWindows = filterNonDevToolsWindows(electronApp.windows());
-      if (existingWindows.length > 0) {
-        return existingWindows[0];
-      }
+function getAppWindows(electronApp: ElectronApplication): Page[] {
+  return electronApp.windows().filter(window => !window.isClosed() && !isDevToolsWindow(window.url()));
+}
 
-      return await electronApp.waitForEvent('window', {
-        timeout: TIMEOUTS.NON_DEVTOOLS_WINDOW,
-        predicate: page => !isDevToolsWindow(page.url()),
-      });
-    } catch (error) {
-      lastError = error;
-      if (attempt < retries) {
-        const delay = TIMEOUTS.RETRY_DELAY * (attempt + 1);
-        console.warn(
-          `Failed to get dev window (attempt ${attempt + 1}/${retries + 1}), retrying in ${delay}ms:`,
-          error,
-        );
-        await new Promise(resolve => setTimeout(resolve, delay));
+const attachedDiagnosticPages = new WeakSet<Page>();
+
+function ensurePageDiagnostics(page: Page): void {
+  if (attachedDiagnosticPages.has(page)) {
+    return;
+  }
+  attachPageDiagnostics(page);
+  attachedDiagnosticPages.add(page);
+}
+
+/**
+ * Playwright can list a window in `windows()` before CDP is attached. On Windows CI
+ * `page.url()` may stay empty while the renderer is alive. Avoid firstWindow() — it can
+ * block until the debugger disconnects (Playwright #29386) even after dom-ready fires.
+ * Poll windows() and waitForEvent('window') until evaluate() reaches the document.
+ */
+async function waitForCdpReadyPage(electronApp: ElectronApplication, timeout = TIMEOUTS.DEFAULT): Promise<Page> {
+  bootstrapLog(`waiting for CDP-ready dev mode page (timeout ${timeout}ms)`);
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    for (const candidate of getAppWindows(electronApp)) {
+      if (await isPageCdpReady(candidate)) {
+        bootstrapLog(`CDP-ready via windows() url=${candidate.url()}`);
+        return candidate;
       }
     }
+
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      break;
+    }
+
+    try {
+      const page = await electronApp.waitForEvent('window', {
+        timeout: Math.min(2_000, remaining),
+        predicate: candidate => !candidate.isClosed() && !isDevToolsWindow(candidate.url()),
+      });
+      if (await isPageCdpReady(page)) {
+        bootstrapLog(`CDP-ready via window event url=${page.url()}`);
+        return page;
+      }
+    } catch {
+      // No new window this interval — keep polling existing windows.
+    }
+
+    logWindowSnapshot(electronApp, 'cdp-poll');
+    await new Promise(resolve => setTimeout(resolve, CDP_POLL_INTERVAL_MS));
   }
 
-  console.error('Failed to get dev window after retries, falling back to firstWindow:', lastError);
-  const allWindows = electronApp.windows();
-  if (allWindows.length > 0) {
-    return allWindows[0];
-  }
-
-  throw new Error(`Failed to get any window from Electron app: ${lastError}`);
+  logWindowSnapshot(electronApp, 'cdp-ready-timeout');
+  throw new Error(`No CDP-ready dev mode page within ${timeout}ms`);
 }
 
 function prepareElectronEnv(): Record<string, string> {
@@ -239,6 +297,10 @@ function prepareElectronEnv(): Record<string, string> {
   }
   // Remove Electron-specific variables that shouldn't be passed
   delete electronEnv.ELECTRON_RUN_AS_NODE;
+  // Build-time fuse flag only — runtime inspect env breaks Playwright/CDP attach on Windows.
+  delete electronEnv.ELECTRON_ENABLE_INSPECT;
+  // Opens a competing Node inspector and breaks Playwright CDP on Windows CI.
+  delete electronEnv.ELECTRON_ENABLE_STACK_DUMPING;
 
   return electronEnv;
 }
@@ -293,7 +355,12 @@ const LINUX_BRIDGE_PATHS = [
   join('.local', 'share', 'keyrings'),
 ];
 
-function setupTestConfigDir(electronEnv: Record<string, string>): void {
+function setupTestConfigDir(electronEnv: Record<string, string>): string {
+  const startupDiagLogPath = join(tmpdir(), `kaiden-startup-diag-${Date.now()}.log`);
+  electronEnv.KAIDEN_STARTUP_DIAG = 'true';
+  electronEnv.KAIDEN_STARTUP_DIAG_LOG = startupDiagLogPath;
+  bootstrapLog(`startup diagnostics log=${startupDiagLogPath}`);
+
   // On macOS, use /tmp (short prefix) so the Podman socket path derived from HOME
   // stays under the 104-byte Unix domain socket limit. The default tmpdir() on macOS
   // returns /var/folders/<hash>/T/ which is ~56 chars and causes the socket path to
@@ -303,11 +370,11 @@ function setupTestConfigDir(electronEnv: Record<string, string>): void {
   // realpathSync resolves macOS /var → /private/var symlinks so all paths match what the Goose CLI returns.
   const realTestDataDir = realpathSync(testDataDir);
   electronEnv.KAIDEN_HOME_DIR = realTestDataDir;
-  // Redirect home-dir env vars to the isolated temp dir so homedir() and Goose CLI use it instead of ~/.config/goose.
-  electronEnv.HOME = realTestDataDir;
-  // Do NOT override USERPROFILE on Windows — Electron uses it to derive AppData paths and
-  // overriding it causes singleton-lock conflicts. Goose is not supported on Windows GHA runners anyway.
+  // On Windows, do NOT override HOME or USERPROFILE — Chromium uses HOME for internal cache
+  // path resolution, and setting it to an empty temp dir prevents the renderer from initializing
+  // (loadURL hangs forever). KAIDEN_HOME_DIR is sufficient for app-level config isolation.
   if (process.platform !== 'win32') {
+    electronEnv.HOME = realTestDataDir;
     electronEnv.USERPROFILE = realTestDataDir;
   }
   // On Linux, LinuxXDGDirectories prefers XDG_CONFIG_HOME/XDG_DATA_HOME over homedir() — point them at the temp dir.
@@ -322,20 +389,36 @@ function setupTestConfigDir(electronEnv: Record<string, string>): void {
 
   const configDir = join(realTestDataDir, 'configuration');
   mkdirSync(configDir, { recursive: true });
+  mkdirSync(join(realTestDataDir, 'rag'), { recursive: true });
 
   writeFileSync(join(configDir, 'settings.json'), JSON.stringify({ 'preferences.OpenDevTools': 'none' }));
+  return startupDiagLogPath;
+}
+
+function buildLaunchArgs(): string[] {
+  const args: string[] = [];
+  if (process.platform === 'linux') {
+    args.push('--no-sandbox');
+  }
+  if (process.platform === 'darwin') {
+    args.push('--use-mock-keychain');
+  }
+  if (process.env.CI) {
+    args.push('--disable-gpu', '--disable-gpu-compositing', '--force-device-scale-factor=1');
+    if (process.platform === 'win32') {
+      args.push('--use-gl=swiftshader');
+    }
+  }
+
+  return args;
 }
 
 function createLaunchConfig(): Parameters<typeof electron.launch>[0] {
   const electronEnv = prepareElectronEnv();
   const recordVideo = { dir: join(tmpdir(), 'kaiden-test-videos') };
 
-  setupTestConfigDir(electronEnv);
-
-  const args = ['--no-sandbox'];
-  if (process.platform !== 'linux') {
-    args.push('--use-mock-keychain');
-  }
+  startupDiagnosticsLogPath = setupTestConfigDir(electronEnv);
+  const args = buildLaunchArgs();
 
   if (isProductionMode) {
     return {
@@ -352,46 +435,161 @@ function createLaunchConfig(): Parameters<typeof electron.launch>[0] {
       ...electronEnv,
       ELECTRON_IS_DEV: '1',
     },
-    cwd: resolve(__dirname, '../../../..'),
+    cwd: repoRoot,
     recordVideo,
   };
 }
 
+function dumpStartupDiagnostics(): void {
+  const logPath = startupDiagnosticsLogPath;
+  if (!logPath || !existsSync(logPath)) {
+    bootstrapLog(`startup diagnostics log missing at ${logPath ?? 'unset'}`);
+    return;
+  }
+  console.error('=== Kaiden startup diagnostics ===');
+  console.error(readFileSync(logPath, 'utf8'));
+  console.error('=== end startup diagnostics ===');
+}
+
+function attachElectronProcessDiagnostics(electronApp: ElectronApplication): void {
+  electronApp.on('close', () => bootstrapLog('electron-app-close-event'));
+  const { stderr, stdout } = electronApp.process();
+  stderr?.on('data', data => {
+    console.error(`STDERR: ${data}`);
+  });
+  stdout?.on('data', data => {
+    console.log(`STDOUT: ${data}`);
+  });
+}
+
 export async function launchElectronApp(): Promise<ElectronApplication> {
-  return electron.launch(createLaunchConfig());
+  let electronApp: ElectronApplication | undefined;
+  try {
+    if (shouldLaunchViaCdp()) {
+      const electronEnv = prepareElectronEnv();
+      startupDiagnosticsLogPath = setupTestConfigDir(electronEnv);
+      const args = buildLaunchArgs();
+      bootstrapLog(
+        `launching production binary via CDP port=${process.env.DEBUGGING_PORT ?? process.env.KAIDEN_CDP_PORT ?? '9222'}`,
+      );
+      electronApp = await launchCdpElectronApp(process.env.KAIDEN_BINARY!, args, electronEnv);
+    } else {
+      electronApp = await electron.launch(createLaunchConfig());
+    }
+    bootstrapLog(`launched electron pid=${electronApp.process().pid ?? 'unknown'}`);
+    attachElectronProcessDiagnostics(electronApp);
+    return electronApp;
+  } catch (error) {
+    dumpStartupDiagnostics();
+    if (electronApp) {
+      attachElectronProcessDiagnostics(electronApp);
+    }
+    throw error;
+  }
+}
+
+function attachPageDiagnostics(page: Page): void {
+  page.on('console', msg => console.log(`[${msg.type()}] ${msg.text()}`));
+  page.on('close', () => bootstrapLog('page close event'));
+  page.on('crash', () => bootstrapLog('page crash event'));
+  page.on('domcontentloaded', () => bootstrapLog(`domcontentloaded url=${page.url()}`));
+  page.on('load', () => bootstrapLog(`load url=${page.url()}`));
+}
+
+function logWindowSnapshot(electronApp: ElectronApplication | null | undefined, label: string): void {
+  if (!isBootstrapDebug || !electronApp) {
+    return;
+  }
+  const windows = electronApp.windows();
+  bootstrapLog(`${label}: windows=${windows.length}`);
+  windows.forEach((window, index) => {
+    bootstrapLog(`${label}: window[${index}] closed=${window.isClosed()} url=${window.url()}`);
+  });
+}
+
+async function waitForUsablePage(electronApp: ElectronApplication): Promise<Page> {
+  logWindowSnapshot(electronApp, 'before-window-selection');
+
+  let page: Page;
+  if (isProductionMode) {
+    page = await electronApp.firstWindow({ timeout: TIMEOUTS.DEFAULT });
+  } else {
+    page = await getDevModeWindow(electronApp);
+  }
+
+  logWindowSnapshot(electronApp, 'after-window-selection');
+
+  if (page.isClosed()) {
+    bootstrapLog('selected page already closed, waiting for a new window');
+    page = await electronApp.waitForEvent('window', {
+      timeout: TIMEOUTS.NON_DEVTOOLS_WINDOW,
+      predicate: candidate => !candidate.isClosed() && !isDevToolsWindow(candidate.url()),
+    });
+    logWindowSnapshot(electronApp, 'after-replacement-window');
+  }
+
+  ensurePageDiagnostics(page);
+  return page;
 }
 
 export async function getFirstPage(electronApp: ElectronApplication): Promise<Page> {
-  let page: Page;
+  const deadline = Date.now() + TIMEOUTS.DEFAULT;
+  let lastError: unknown;
 
-  try {
-    if (isProductionMode) {
-      page = await electronApp.firstWindow({ timeout: TIMEOUTS.DEFAULT });
-    } else {
-      page = await getDevModeWindow(electronApp);
-    }
-  } catch (error) {
-    const allWindows = electronApp.windows();
-    if (allWindows.length > 0) {
-      const nonDevToolsWindows = filterNonDevToolsWindows(allWindows);
-      page = nonDevToolsWindows.length > 0 ? nonDevToolsWindows[0] : allWindows[0];
-      console.warn('Using fallback window selection after error:', error);
-    } else {
-      throw new Error(`Failed to get first page: ${error instanceof Error ? error.message : String(error)}`);
+  while (Date.now() < deadline) {
+    try {
+      const page = await waitForUsablePage(electronApp);
+      const remaining = Math.max(1_000, deadline - Date.now());
+
+      console.log('Waiting for app ready, initial page url:', page.url());
+      bootstrapLog(`selected page: closed=${page.isClosed()} url=${page.url()}`);
+
+      if (page.isClosed()) {
+        throw new Error(
+          `Selected page is already closed before waitForAppReady. ${getElectronDiagnosticsSummary(electronApp)}`,
+        );
+      }
+
+      let pageClosedDuringReady = false;
+      const onPageClose = (): void => {
+        pageClosedDuringReady = true;
+      };
+      page.on('close', onPageClose);
+      try {
+        await waitForAppReady(page, remaining);
+      } finally {
+        page.off('close', onPageClose);
+      }
+      if (pageClosedDuringReady || page.isClosed()) {
+        throw new Error('Target page closed during waitForAppReady');
+      }
+      return page;
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const pageLost =
+        message.includes('closed') ||
+        message.includes('Target page') ||
+        message.includes('No CDP-ready') ||
+        message.includes('CDP endpoint did not become ready') ||
+        message.includes('No renderer page appeared after CDP') ||
+        message.includes('Window closed before CDP');
+      if (pageLost && Date.now() < deadline) {
+        bootstrapLog(`page lost during startup (${message}), re-selecting window`);
+        await new Promise(resolve => setTimeout(resolve, CDP_POLL_INTERVAL_MS));
+        continue;
+      }
+      throw error;
     }
   }
 
-  await page.waitForLoadState('load', { timeout: TIMEOUTS.PAGE_LOAD });
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
 
-  await waitForAppReady(page);
-
-  page.on('console', msg => console.log(`[${msg.type()}] ${msg.text()}`));
-
-  electronApp.process().stderr?.on('data', data => {
-    console.log(`STDERR: ${data}`);
-  });
-
-  return page;
+function getElectronDiagnosticsSummary(electronApp: ElectronApplication): string {
+  const processState = electronApp.process();
+  const stderrTail = processState.stderr ? 'stderr attached' : 'stderr unavailable';
+  return `electronDiagnostics={processClosed=${processState.killed},exitCode=${processState.exitCode ?? 'null'},exitSignal=${processState.signalCode ?? 'null'},${stderrTail}}`;
 }
 
 export async function closeAllWindows(electronApp: ElectronApplication): Promise<void> {

@@ -20,6 +20,8 @@ import { existsSync } from 'node:fs';
 
 import type { Page, TestInfo } from '@playwright/test';
 
+import { shouldLaunchViaCdp } from '../fixtures/cdp-electron-app';
+
 function attach(testInfo: TestInfo, name: string, path: string, contentType: string): void {
   if (existsSync(path)) {
     testInfo.attachments.push({ name, path, contentType });
@@ -30,20 +32,22 @@ export async function saveTestArtifacts(page: Page, testInfo: TestInfo): Promise
   const context = page.context();
   const failed = testInfo.status !== testInfo.expectedStatus;
 
+  if (!shouldLaunchViaCdp()) {
+    if (failed) {
+      const tracePath = testInfo.outputPath('trace.zip');
+      await context.tracing.stopChunk({ path: tracePath }).catch(() => {});
+      attach(testInfo, 'trace', tracePath, 'application/zip');
+    } else {
+      await context.tracing.stopChunk().catch(() => {});
+    }
+  }
   if (failed) {
-    const tracePath = testInfo.outputPath('trace.zip');
-    await context.tracing.stopChunk({ path: tracePath }).catch(() => {});
-    attach(testInfo, 'trace', tracePath, 'application/zip');
-
     const screenshotPath = testInfo.outputPath('failure.png');
     await page.screenshot({ path: screenshotPath, fullPage: true }).catch((error: unknown) => {
       console.error('Failed to capture failure screenshot:', error);
     });
     attach(testInfo, 'screenshot', screenshotPath, 'image/png');
-  } else {
-    await context.tracing.stopChunk().catch(() => {});
   }
-
   // saveAs() is safe to call while the page is still open — it copies the
   // recording captured so far without waiting for page/context closure.
   // Only video.delete() blocks until the page closes.

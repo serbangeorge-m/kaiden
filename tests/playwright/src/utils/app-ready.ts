@@ -16,10 +16,17 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+import { readFileSync } from 'node:fs';
+import { basename } from 'node:path';
+
 import { type ElectronApplication, expect, type Locator, type Page } from '@playwright/test';
 import { type DialogOptions, SELECTORS, TIMEOUTS } from 'src/model/core/types';
 
-export async function waitForAppReady(page: Page, timeout = TIMEOUTS.DEFAULT): Promise<void> {
+function supportsMainProcessEvaluate(electronApp: ElectronApplication): boolean {
+  return typeof electronApp.evaluate === 'function';
+}
+
+export async function waitForAppReady(page: Page, timeout: number = TIMEOUTS.DEFAULT): Promise<void> {
   try {
     await expect(page.locator(SELECTORS.MAIN_ANY).first()).toBeVisible({ timeout });
   } catch (error) {
@@ -35,7 +42,7 @@ export async function waitForAppReady(page: Page, timeout = TIMEOUTS.DEFAULT): P
   await handleWelcomePageIfPresent(page);
 }
 
-export async function waitForNavigationReady(page: Page, timeout = TIMEOUTS.DEFAULT): Promise<void> {
+export async function waitForNavigationReady(page: Page, timeout: number = TIMEOUTS.DEFAULT): Promise<void> {
   await waitForAppReady(page, timeout);
   await expect(page.getByRole(SELECTORS.NAVIGATION.role, { name: SELECTORS.NAVIGATION.name })).toBeVisible({
     timeout,
@@ -47,16 +54,47 @@ async function waitForInitializingScreenToDisappear(page: Page): Promise<void> {
   await expect(initializingScreen).toBeHidden({ timeout: TIMEOUTS.INITIALIZING_SCREEN });
 }
 
+async function dismissWelcomeOverlay(page: Page, welcomePage: Locator, skipButton: Locator): Promise<void> {
+  await page.bringToFront();
+  await page.keyboard.press('Escape').catch(() => undefined);
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await skipButton.scrollIntoViewIfNeeded();
+    await skipButton.click({ timeout: TIMEOUTS.STANDARD });
+
+    try {
+      await expect(welcomePage).toBeHidden({ timeout: 5_000 });
+      return;
+    } catch {
+      console.log(`Welcome overlay still visible after Skip click (attempt ${attempt}/3)`);
+      await page.keyboard.press('Escape').catch(() => undefined);
+    }
+  }
+
+  await expect(welcomePage).toBeHidden({ timeout: TIMEOUTS.STANDARD });
+}
+
 async function handleWelcomePageIfPresent(page: Page, timeout = 5_000): Promise<void> {
   const welcomePage = page.locator(SELECTORS.WELCOME_PAGE).first();
+  const skipButton = page.getByRole('button', { name: 'Skip', exact: true });
+  const guidedSetupButton = page.getByRole('button', { name: 'Start guided setup', exact: true });
+  const startOnboardingButton = page.getByRole('button', { name: 'Start onboarding', exact: true });
 
   try {
-    await expect(welcomePage).not.toBeVisible({ timeout: timeout });
+    await expect(welcomePage).not.toBeVisible({ timeout });
+    return;
   } catch {
-    const skipButton = page.getByRole('button', { name: 'Skip' });
-    await skipButton.click();
-    await expect(welcomePage).toBeHidden({ timeout: TIMEOUTS.STANDARD });
+    // Welcome screen is visible — dismiss it the same way as local / Podman Desktop e2e.
   }
+
+  await page.bringToFront();
+
+  // Extensions load sequentially and can block the welcome footer until ready.
+  const readyButton = guidedSetupButton.or(startOnboardingButton).or(skipButton);
+  await expect(readyButton.first()).toBeEnabled({ timeout: 60_000 });
+
+  await expect(skipButton).toBeEnabled({ timeout: TIMEOUTS.STANDARD });
+  await dismissWelcomeOverlay(page, welcomePage, skipButton);
 }
 
 export async function handleDialogIfPresent(
@@ -115,6 +153,11 @@ export async function withMockedFileDialog(
   filePath: string,
   action: () => Promise<void>,
 ): Promise<void> {
+  if (!supportsMainProcessEvaluate(electronApp)) {
+    throw new Error(
+      'Main-process evaluate() is unavailable (Windows CDP prod). Use selectLocalFile() with a drop zone instead.',
+    );
+  }
   await electronApp.evaluate(({ dialog }, fp: string) => {
     const g = globalThis as unknown as Record<string, unknown>;
     g.__originalShowOpenDialog = dialog.showOpenDialog;
@@ -130,4 +173,43 @@ export async function withMockedFileDialog(
       delete g.__originalShowOpenDialog;
     });
   }
+}
+
+async function dropFileOnZone(page: Page, dropZone: Locator, absoluteFilePath: string): Promise<void> {
+  const content = readFileSync(absoluteFilePath, 'utf-8');
+  const fileName = basename(absoluteFilePath);
+
+  const dataTransfer = await page.evaluateHandle(
+    ({ fileContent, name }) => {
+      const dt = new DataTransfer();
+      const file = new File([fileContent], name, { type: 'text/markdown' });
+      dt.items.add(file);
+      return dt;
+    },
+    { fileContent: content, name: fileName },
+  );
+
+  await dropZone.dispatchEvent('drop', { dataTransfer });
+}
+
+/**
+ * Select a local file via native dialog mock (when main-process evaluate is available)
+ * or drag-and-drop on the given zone (Windows CDP prod).
+ */
+export async function selectLocalFile(
+  page: Page,
+  electronApp: ElectronApplication,
+  dropZone: Locator,
+  absoluteFilePath: string,
+): Promise<void> {
+  await expect(dropZone).toBeVisible();
+
+  if (supportsMainProcessEvaluate(electronApp)) {
+    await withMockedFileDialog(electronApp, absoluteFilePath, async () => {
+      await dropZone.click();
+    });
+    return;
+  }
+
+  await dropFileOnZone(page, dropZone, absoluteFilePath);
 }

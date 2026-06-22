@@ -18,7 +18,7 @@
 
 import { type ElectronApplication, expect, type Locator, type Page } from '@playwright/test';
 import { TIMEOUTS } from 'src/model/core/types';
-import { withMockedFileDialog } from 'src/utils/app-ready';
+import { selectLocalFile } from 'src/utils/app-ready';
 
 import { BasePage } from './base-page';
 
@@ -56,10 +56,7 @@ export class SkillsCreatePage extends BasePage {
   }
 
   async selectFile(absoluteFilePath: string, electronApp: ElectronApplication): Promise<void> {
-    await withMockedFileDialog(electronApp, absoluteFilePath, async () => {
-      await expect(this.fileDropZone).toBeVisible();
-      await this.fileDropZone.click();
-    });
+    await selectLocalFile(this.page, electronApp, this.fileDropZone, absoluteFilePath);
     await expect(this.nameInput).not.toBeEmpty({ timeout: TIMEOUTS.SHORT });
   }
 

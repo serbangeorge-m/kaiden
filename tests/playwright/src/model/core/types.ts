@@ -216,7 +216,7 @@ export const SELECTORS = {
   MAIN_INITIALIZING: 'main.flex.flex-row.w-screen.h-screen.justify-center',
   MAIN_APP_CONTAINER: 'main.flex.flex-col.w-screen.h-screen.overflow-hidden',
   TITLE_BAR: 'header#navbar',
-  WELCOME_PAGE: 'div:has-text("Get started with Kaiden")',
+  WELCOME_PAGE: 'div.fixed.top-0.left-0.right-0.bottom-0.z-50:has-text("Get started with Kaiden")',
   NAVIGATION: { role: 'navigation' as const, name: 'AppNavigation' },
 } as const;
 
