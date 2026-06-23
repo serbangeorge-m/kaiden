@@ -125,7 +125,6 @@ workspace_e2e_resolve_prerelease() {
 workspace_e2e_prepare_params() {
   local params_file="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is required}/e2e-params.json"
   local github_owner_re='^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$'
-  local allowed_env='{}'
   local nvmrc
 
   [[ "${FORK:-}" =~ $github_owner_re ]] || workspace_e2e_fail "Invalid fork: ${FORK:-<empty>}"
@@ -139,28 +138,6 @@ workspace_e2e_prepare_params() {
   local expected_prefix="https://github.com/${PRERELEASE_OWNER}/${PRERELEASE_REPO}/releases/download/"
   [[ "$PRERELEASE_URL" == "$expected_prefix"* ]] || workspace_e2e_fail "Prerelease URL does not match ${PRERELEASE_OWNER}/${PRERELEASE_REPO}"
   [[ "$PRERELEASE_URL" =~ \.(exe|msi)([?#].*)?$ ]] || workspace_e2e_fail "Prerelease URL must end with .exe or .msi"
-
-  IFS=',' read -ra env_entries <<< "${ENV_VARS:-}"
-  for entry in "${env_entries[@]}"; do
-    entry="${entry#"${entry%%[![:space:]]*}"}"
-    entry="${entry%"${entry##*[![:space:]]}"}"
-    [ -z "$entry" ] && continue
-    local key="${entry%%=*}"
-    local value="${entry#*=}"
-    case "$key" in
-      PODMAN_ENABLED|WORKSPACE_TESTS_CI)
-        [[ "$value" == "true" || "$value" == "false" ]] || workspace_e2e_fail "${key} must be true or false"
-        ;;
-      DEBUGGING_PORT)
-        [[ "$value" =~ ^[0-9]+$ && "$value" -ge 1024 && "$value" -le 65535 ]] || workspace_e2e_fail "Invalid DEBUGGING_PORT"
-        ;;
-      CONTAINERS_MACHINE_PROVIDER)
-        [[ "$value" == "wsl" || "$value" == "hyperv" ]] || workspace_e2e_fail "Invalid CONTAINERS_MACHINE_PROVIDER"
-        ;;
-      *) workspace_e2e_fail "Disallowed env_vars key: ${key}" ;;
-    esac
-    allowed_env=$(jq -c --arg k "$key" --arg v "$value" '. + {($k): $v}' <<< "$allowed_env")
-  done
 
   nvmrc=$(curl -fsSL "https://raw.githubusercontent.com/${FORK}/${TARGET_REPO}/${BRANCH}/.nvmrc" 2>/dev/null || cat "${GITHUB_WORKSPACE}/.nvmrc")
   nvmrc=$(printf '%s' "$nvmrc" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -179,7 +156,6 @@ workspace_e2e_prepare_params() {
     --arg prereleaseDownloadUrl "$PRERELEASE_URL" \
     --arg prereleaseInstallMode "${PRERELEASE_INSTALL_MODE:-setup}" \
     --arg nvmrcVersion "$nvmrc" \
-    --argjson allowedEnv "$allowed_env" \
     '{
       fork: $fork,
       branch: $branch,
@@ -192,8 +168,7 @@ workspace_e2e_prepare_params() {
       prereleaseTag: $prereleaseTag,
       prereleaseDownloadUrl: $prereleaseDownloadUrl,
       prereleaseInstallMode: $prereleaseInstallMode,
-      nvmrcVersion: $nvmrcVersion,
-      allowedEnv: $allowedEnv
+      nvmrcVersion: $nvmrcVersion
     }' >"$params_file"
 
   echo "Remote params written to ${params_file}"

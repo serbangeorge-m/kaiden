@@ -456,11 +456,11 @@ function Assert-RequiredWorkspaceTestEnv {
   }
 
   if ($env:PODMAN_ENABLED -ne 'true') {
-    throw 'PODMAN_ENABLED must be true for Windows workspace E2E (set via workflow env_vars)'
+    throw 'PODMAN_ENABLED must be true for Windows workspace E2E'
   }
 
-  if (-not $env:WORKSPACE_TESTS_CI) {
-    throw 'WORKSPACE_TESTS_CI must be set for MAPT workspace E2E runs'
+  if ($env:WORKSPACE_TESTS_CI -ne 'true') {
+    throw 'WORKSPACE_TESTS_CI must be true for MAPT workspace E2E runs'
   }
 
   foreach ($var in (Get-RequiredWorkspaceTestEnvVars -NpmTarget $NpmTarget)) {
@@ -486,22 +486,16 @@ function Clear-KaidenWorkspaceSecrets {
   }
 }
 
-function Apply-KaidenAllowedEnvFromParams {
+function Set-KaidenWorkspaceE2EEnv {
   param(
-    [Parameter(Mandatory)]$Params
+    [Parameter(Mandatory)][string]$PodmanProvider
   )
 
   $env:CI = 'true'
-
-  if ($Params.podmanProvider) {
-    $env:CONTAINERS_MACHINE_PROVIDER = [string]$Params.podmanProvider
-  }
-
-  if ($Params.allowedEnv) {
-    foreach ($prop in $Params.allowedEnv.PSObject.Properties) {
-      Set-Item -Path "env:$($prop.Name)" -Value [string]$prop.Value
-    }
-  }
+  $env:PODMAN_ENABLED = 'true'
+  $env:WORKSPACE_TESTS_CI = 'true'
+  $env:DEBUGGING_PORT = '9222'
+  $env:CONTAINERS_MACHINE_PROVIDER = $PodmanProvider
 }
 
 function Install-GitForWindows {
@@ -643,7 +637,7 @@ function Invoke-KaidenWorkspaceE2ERemoteStep {
         $env:PATH = "$userPath;$env:PATH"
       }
 
-      Apply-KaidenAllowedEnvFromParams -Params $params
+      Set-KaidenWorkspaceE2EEnv -PodmanProvider ([string]$params.podmanProvider)
       Import-KaidenWorkspaceSecrets -SecretsFileName 'secrets.txt'
 
       $kaidenPathFile = Join-Path $env:USERPROFILE 'tools\kaiden\kaiden-binary-path.txt'
