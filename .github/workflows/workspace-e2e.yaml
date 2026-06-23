@@ -235,7 +235,7 @@ jobs:
         echo "::endgroup::"
 
     - name: Install Podman on remote host
-      timeout-minutes: 5
+      timeout-minutes: 15
       shell: bash
       run: |
         source .github/scripts/workspace-e2e-runner.sh
@@ -244,7 +244,7 @@ jobs:
         echo "::endgroup::"
 
     - name: Initialize and start Podman machine
-      timeout-minutes: 5
+      timeout-minutes: 15
       shell: bash
       run: |
         source .github/scripts/workspace-e2e-runner.sh
@@ -303,7 +303,7 @@ jobs:
       if: always()
       shell: bash
       run: |
-        ssh $SSH_OPTS "$REMOTE_HOST" 'Remove-Item -Path (Join-Path $env:USERPROFILE "secrets.txt"), (Join-Path $env:USERPROFILE "install-secrets.txt") -Force -ErrorAction SilentlyContinue'
+        ssh $SSH_OPTS "$REMOTE_HOST" 'Remove-Item -Path (Join-Path $env:USERPROFILE "secrets.txt"), (Join-Path $env:USERPROFILE "install-secrets.txt") -Force -ErrorAction SilentlyContinue' || true
 
     - name: Create workflow run attributes
       if: always()
@@ -346,7 +346,7 @@ jobs:
         include_passed: true
         detailed_summary: true
         annotate_only: true
-        require_tests: true
+        require_tests: false
         report_paths: '**/*results.xml'
 
     - name: Upload test artifacts

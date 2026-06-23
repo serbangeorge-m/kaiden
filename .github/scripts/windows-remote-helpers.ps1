@@ -1022,7 +1022,8 @@ function Install-PodmanCli {
   $ProgressPreference = 'SilentlyContinue'
 
   if (Get-Command podman -ErrorAction SilentlyContinue) {
-    Write-Host "Podman already installed: $(podman --version)"
+    $existingExe = (Get-Command podman).Source
+    Write-Host "Podman already installed at: $existingExe"
     return
   }
 
@@ -1037,7 +1038,8 @@ function Install-PodmanCli {
 
   $podmanExe = Resolve-PodmanExecutable
   Add-PodmanToPath -PodmanExe $podmanExe
-  & $podmanExe --version
+  # Avoid running podman.exe here — first launch can hang on WSL/machine setup and block SSH.
+  Write-Host "Podman installed at: $podmanExe"
 }
 
 function Initialize-AndStartPodmanMachine {
