@@ -1,5 +1,7 @@
-# Shared retry helpers for remote Windows CI steps (workspace-e2e).
+# Shared helpers for remote Windows CI steps (workspace-e2e MAPT VM).
 # Dot-source from remote scripts: . "$env:USERPROFILE\ci-scripts\windows-remote-helpers.ps1"
+#
+# Runner-side orchestration (GitHub Actions ubuntu) lives in workspace-e2e-runner.sh.
 
 function Invoke-DownloadWithRetry {
   param(
@@ -350,6 +352,301 @@ function Write-KaidenBinaryPathFile {
   return $BinaryPath
 }
 
+function Get-KaidenE2EParamsPath {
+  Join-Path $env:USERPROFILE 'ci-scripts\e2e-params.json'
+}
+
+function Get-KaidenE2EParams {
+  $path = Get-KaidenE2EParamsPath
+  if (-not (Test-Path $path)) {
+    throw "E2E params file missing: $path"
+  }
+
+  return Get-Content $path -Raw | ConvertFrom-Json
+}
+
+function Assert-KaidenPrereleaseDownloadUrl {
+  param(
+    [Parameter(Mandatory)][string]$Url,
+    [Parameter(Mandatory)][string]$Owner,
+    [Parameter(Mandatory)][string]$Repo
+  )
+
+  $uri = [uri]$Url
+  if ($uri.Scheme -ne 'https') {
+    throw "Prerelease URL must use HTTPS: $Url"
+  }
+
+  if ($uri.Host -eq 'github.com') {
+    $expectedPrefix = "/$Owner/$Repo/releases/download/"
+    if (-not $uri.AbsolutePath.StartsWith($expectedPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+      throw "Prerelease URL path must start with $expectedPrefix"
+    }
+    if ($uri.AbsolutePath -notmatch '\.(exe|msi)$') {
+      throw 'Prerelease URL must end with .exe or .msi'
+    }
+    return
+  }
+
+  if ($uri.Host -eq 'objects.githubusercontent.com') {
+    if ($Url -notmatch '\.(exe|msi)(\?|$)') {
+      throw 'objects.githubusercontent.com URL must reference an .exe or .msi asset'
+    }
+    return
+  }
+
+  throw "Prerelease URL host not allowed: $($uri.Host)"
+}
+
+function Assert-KaidenPodmanDownloadUrl {
+  param(
+    [Parameter(Mandatory)][string]$Url
+  )
+
+  $uri = [uri]$Url
+  if ($uri.Scheme -ne 'https') {
+    throw "Podman URL must use HTTPS: $Url"
+  }
+
+  $allowedHosts = @('github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com')
+  if ($allowedHosts -notcontains $uri.Host) {
+    throw "Podman URL host not allowed: $($uri.Host)"
+  }
+}
+
+function Import-KaidenWorkspaceSecrets {
+  param(
+    [string]$SecretsFileName = 'secrets.txt'
+  )
+
+  $secretsFile = Join-Path $env:USERPROFILE $SecretsFileName
+  if (-not (Test-Path $secretsFile)) {
+    return
+  }
+
+  Get-Content $secretsFile | ForEach-Object {
+    if (-not $_.StartsWith('#') -and -not [string]::IsNullOrWhiteSpace($_)) {
+      $key, $value = $_ -split '=', 2
+      Set-Item -Path "env:$($key.Trim())" -Value $value.Trim()
+    }
+  }
+}
+
+function Clear-KaidenWorkspaceSecrets {
+  param(
+    [string[]]$SecretFileNames = @('secrets.txt', 'install-secrets.txt')
+  )
+
+  foreach ($name in $SecretFileNames) {
+    $path = Join-Path $env:USERPROFILE $name
+    if (Test-Path $path) {
+      Remove-Item $path -Force
+    }
+  }
+}
+
+function Apply-KaidenAllowedEnvFromParams {
+  param(
+    [Parameter(Mandatory)]$Params
+  )
+
+  $env:CI = 'true'
+
+  if ($Params.podmanProvider) {
+    $env:CONTAINERS_MACHINE_PROVIDER = [string]$Params.podmanProvider
+  }
+
+  if ($Params.allowedEnv) {
+    foreach ($prop in $Params.allowedEnv.PSObject.Properties) {
+      Set-Item -Path "env:$($prop.Name)" -Value [string]$prop.Value
+    }
+  }
+}
+
+function Install-GitForWindows {
+  if (Get-Command git -ErrorAction SilentlyContinue) {
+    Write-Host "Git already installed: $(git version)"
+    return
+  }
+
+  $ProgressPreference = 'SilentlyContinue'
+  $gitVersion = '2.42.0.2'
+  $toolsDir = Join-Path $env:USERPROFILE 'tools'
+  if (-not (Test-Path $toolsDir)) {
+    New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
+  }
+
+  $gitDir = Join-Path $toolsDir 'git'
+  if (-not (Test-Path $gitDir)) {
+    Invoke-DownloadWithRetry `
+      -Uri "https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.2/MinGit-$gitVersion-64-bit.zip" `
+      -OutFile (Join-Path $toolsDir 'git.zip') `
+      -MinBytes 1000000
+    Expand-Archive -Path (Join-Path $toolsDir 'git.zip') -DestinationPath $gitDir -Force
+    Remove-Item (Join-Path $toolsDir 'git.zip') -Force
+  }
+
+  $env:PATH = "$gitDir\cmd;$env:PATH"
+  [System.Environment]::SetEnvironmentVariable(
+    'PATH',
+    "$gitDir\cmd;$([System.Environment]::GetEnvironmentVariable('PATH', 'User'))",
+    [System.EnvironmentVariableTarget]::User
+  )
+
+  git version
+}
+
+function Invoke-KaidenWorkspaceE2ERemoteStep {
+  param(
+    [Parameter(Mandatory)]
+    [ValidateSet(
+      'SetPodmanMachineDefaults',
+      'InstallNode',
+      'InstallGit',
+      'CloneAndInstallDeps',
+      'InstallPodman',
+      'InitPodman',
+      'InstallPrerelease',
+      'RunE2ETests'
+    )]
+    [string]$Step
+  )
+
+  $params = Get-KaidenE2EParams
+
+  switch ($Step) {
+    'SetPodmanMachineDefaults' {
+      Set-PodmanMachineDefaults
+    }
+    'InstallNode' {
+      Install-KaidenNodeToolchain -NvmrcVersion $params.nvmrcVersion
+    }
+    'InstallGit' {
+      Install-GitForWindows
+    }
+    'CloneAndInstallDeps' {
+      $workDir = Join-Path $env:USERPROFILE 'workspace'
+      if (-not (Test-Path $workDir)) {
+        New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+      }
+      Set-Location $workDir
+
+      $repo = [string]$params.repo
+      $fork = [string]$params.fork
+      $branch = [string]$params.branch
+
+      if (-not (Test-Path $repo)) {
+        Invoke-CommandWithRetry -Label 'Clone repository' -Action {
+          git clone --branch $branch --single-branch "https://github.com/$fork/$repo.git"
+        }
+      } else {
+        Write-Host 'Repo already cloned, fetching...'
+        Set-Location $repo
+        Invoke-CommandWithRetry -Label 'Fetch and checkout branch' -Action {
+          git fetch --all
+          git checkout $branch
+          git pull --ff-only origin $branch
+        }
+        Set-Location $workDir
+      }
+
+      Install-KaidenPlaywrightTestDependencies -RepoDir (Join-Path $workDir $repo)
+    }
+    'InstallPodman' {
+      $podmanUrl = [string]$params.podmanDownloadUrl
+      if ([string]::IsNullOrWhiteSpace($podmanUrl)) {
+        throw 'podmanDownloadUrl missing from e2e-params.json'
+      }
+      Assert-KaidenPodmanDownloadUrl -Url $podmanUrl
+      Install-PodmanCli -PodmanDownloadUrl $podmanUrl
+    }
+    'InitPodman' {
+      Initialize-AndStartPodmanMachine -Provider ([string]$params.podmanProvider)
+    }
+    'InstallPrerelease' {
+      Import-KaidenWorkspaceSecrets -SecretsFileName 'install-secrets.txt'
+      $installDir = Join-Path $env:USERPROFILE 'tools\kaiden'
+      $token = $env:PRERELEASE_TOKEN
+      if ([string]::IsNullOrWhiteSpace($token)) {
+        $token = ''
+      }
+
+      $installParams = @{
+        Owner = [string]$params.prereleaseOwner
+        Repo = [string]$params.prereleaseRepo
+        InstallDir = $installDir
+        InstallMode = [string]$params.prereleaseInstallMode
+        Token = $token
+      }
+
+      $tag = [string]$params.prereleaseTag
+      if (-not [string]::IsNullOrWhiteSpace($tag)) {
+        $installParams.Tag = $tag
+      }
+
+      $downloadUrl = [string]$params.prereleaseDownloadUrl
+      if (-not [string]::IsNullOrWhiteSpace($downloadUrl)) {
+        Assert-KaidenPrereleaseDownloadUrl -Url $downloadUrl -Owner $installParams.Owner -Repo $installParams.Repo
+        $installParams.DownloadUrl = $downloadUrl
+      }
+
+      Install-KaidenPrereleaseBinary @installParams
+    }
+    'RunE2ETests' {
+      $repo = [string]$params.repo
+      $workDir = Join-Path $env:USERPROFILE "workspace\$repo"
+      Set-Location $workDir
+
+      $userPath = [System.Environment]::GetEnvironmentVariable('PATH', 'User')
+      if ($userPath) {
+        $env:PATH = "$userPath;$env:PATH"
+      }
+
+      Apply-KaidenAllowedEnvFromParams -Params $params
+      Import-KaidenWorkspaceSecrets -SecretsFileName 'secrets.txt'
+
+      $kaidenPathFile = Join-Path $env:USERPROFILE 'tools\kaiden\kaiden-binary-path.txt'
+      if (-not (Test-Path $kaidenPathFile)) {
+        throw "Kaiden binary path file not found at $kaidenPathFile"
+      }
+
+      $env:KAIDEN_BINARY = (Get-Content $kaidenPathFile -Raw).Trim()
+      if (-not (Test-Path $env:KAIDEN_BINARY)) {
+        throw "Kaiden binary not found at $env:KAIDEN_BINARY"
+      }
+      Write-Host "KAIDEN_BINARY=$env:KAIDEN_BINARY"
+
+      $npmTarget = [string]$params.npmTarget
+      if ($npmTarget -eq 'test:e2e:workspaces') {
+        Write-Host 'Prerelease mode: running test:e2e:workspaces:run (skip dev app build)'
+        $npmTarget = 'test:e2e:workspaces:run'
+      }
+
+      Write-Host "Running: pnpm $npmTarget"
+      Write-Host "Provider: $env:CONTAINERS_MACHINE_PROVIDER"
+      Write-Host "Working dir: $workDir"
+
+      Prepare-WindowsDesktopForE2E -Provider $env:CONTAINERS_MACHINE_PROVIDER
+
+      $recordingDir = Join-Path $workDir 'tests\playwright\output\screen-recordings'
+      $recordingStarted = $false
+      try {
+        Start-E2EScreenRecording -OutputDir $recordingDir
+        $recordingStarted = $true
+        pnpm $npmTarget
+      } finally {
+        if ($recordingStarted) {
+          Stop-E2EScreenRecording -OutputDir $recordingDir | Out-Null
+        }
+        Clear-KaidenWorkspaceSecrets
+      }
+    }
+    default {
+      throw "Unhandled remote step: $Step"
+    }
+  }
+}
+
 function Install-KaidenPrereleaseBinary {
   param(
     [Parameter(Mandatory)][string]$Owner,
@@ -368,6 +665,7 @@ function Install-KaidenPrereleaseBinary {
   }
 
   if ($DownloadUrl) {
+    Assert-KaidenPrereleaseDownloadUrl -Url $DownloadUrl -Owner $Owner -Repo $Repo
     Write-Host "Using pre-resolved download URL from workflow runner (mode=$InstallMode)"
     $fileName = [System.IO.Path]::GetFileName(([uri]$DownloadUrl).LocalPath)
     if (-not $fileName) {

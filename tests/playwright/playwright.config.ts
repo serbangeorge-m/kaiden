@@ -89,9 +89,9 @@ const config: PlaywrightTestConfig & {
       use: {
         // Auto-detected provider makes resourceSetup a no-op; workspace tests manage their own providers
         resource: 'ollama',
-        // Traces/videos can capture API traffic and UI with secrets — failure-only, no trace on CI.
+        // Traces capture network traffic (API keys). Video/screen recording stay on for MAPT debugging.
         trace: process.env.CI ? 'off' : 'retain-on-failure',
-        video: 'retain-on-failure',
+        video: process.env.CI ? 'off' : 'retain-on-failure',
         screenshot: 'only-on-failure',
       },
       testIgnore: podmanAvailable && (!process.env.CI || process.env.WORKSPACE_TESTS_CI) ? [] : ['**/*'],

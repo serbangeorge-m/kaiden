@@ -24,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       repo_branch:
-        default: 'FORK=serbangeorge-m,BRANCH=mapt-workflow'
+        default: 'FORK=openkaiden,BRANCH=main'
         description: 'Kaiden fork and branch (FORK=owner,BRANCH=branch)'
         type: string
         required: true
@@ -57,8 +57,8 @@ on:
         required: false
         type: string
       prerelease_owner:
-        default: 'serbangeorge-m'
-        description: 'GitHub owner of testing-prereleases repo (fork daily build publishes to serbangeorge-m/testing-prereleases)'
+        default: 'openkaiden'
+        description: 'GitHub owner of testing-prereleases repo (daily-testing-build publishes to openkaiden/testing-prereleases)'
         type: string
         required: true
       prerelease_repo:
@@ -69,10 +69,6 @@ on:
       prerelease_tag:
         default: ''
         description: 'Optional release tag (e.g. v0.2.0-202606201430-abc1234). Latest if empty.'
-        type: string
-        required: false
-      prerelease_url:
-        description: 'Optional direct download URL for prerelease asset (skips GitHub API resolution)'
         type: string
         required: false
       prerelease_install_mode:
@@ -86,7 +82,7 @@ on:
 
 jobs:
   workspace-e2e:
-    timeout-minutes: 150
+    timeout-minutes: 120
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -112,12 +108,12 @@ jobs:
 
     - name: Set default environment variables
       env:
-        DEFAULT_REPO_BRANCH: 'FORK=serbangeorge-m,BRANCH=mapt-workflow'
+        DEFAULT_REPO_BRANCH: 'FORK=openkaiden,BRANCH=main'
         DEFAULT_NPM_TARGET: 'test:e2e:workspaces'
         DEFAULT_ENV_VARS: 'PODMAN_ENABLED=true,WORKSPACE_TESTS_CI=true'
         DEFAULT_TARGET_REPO: 'kaiden'
         DEFAULT_TARGET_APP_NAME: 'Kaiden'
-        DEFAULT_PRERELEASE_OWNER: 'serbangeorge-m'
+        DEFAULT_PRERELEASE_OWNER: 'openkaiden'
         DEFAULT_PRERELEASE_REPO: 'testing-prereleases'
       run: |
         echo "${{ github.event.inputs.repo_branch || env.DEFAULT_REPO_BRANCH }}" | awk -F ',' \
@@ -126,7 +122,6 @@ jobs:
         echo "PRERELEASE_OWNER=${{ github.event.inputs.prerelease_owner || env.DEFAULT_PRERELEASE_OWNER }}" >> $GITHUB_ENV
         echo "PRERELEASE_REPO=${{ github.event.inputs.prerelease_repo || env.DEFAULT_PRERELEASE_REPO }}" >> $GITHUB_ENV
         echo "PRERELEASE_TAG=${{ github.event.inputs.prerelease_tag || '' }}" >> $GITHUB_ENV
-        echo "PRERELEASE_URL=${{ github.event.inputs.prerelease_url || '' }}" >> $GITHUB_ENV
         echo "PRERELEASE_INSTALL_MODE=${{ github.event.inputs.prerelease_install_mode || 'setup' }}" >> $GITHUB_ENV
         env_vars="${{ github.event.inputs.env_vars || env.DEFAULT_ENV_VARS }}"
         # CDP port only — avoid ELECTRON_ENABLE_LOGGING (secrets in stderr/logs/artifacts).
@@ -151,62 +146,19 @@ jobs:
 
     - name: Get Latest Kaiden testing prerelease
       if: ${{ env.PRERELEASE_URL == '' }}
+      timeout-minutes: 3
       env:
         GH_TOKEN: ${{ secrets.KAIDEN_BOT_TOKEN != '' && secrets.KAIDEN_BOT_TOKEN || secrets.GITHUB_TOKEN }}
-      run: |
-        OWNER="${{ env.PRERELEASE_OWNER }}"
-        REPO="${{ env.PRERELEASE_REPO }}"
-        TAG="${{ env.PRERELEASE_TAG }}"
-        API="https://api.github.com/repos/${OWNER}/${REPO}"
+      run: bash .github/scripts/workspace-e2e-runner.sh resolve-prerelease
 
-        if [ -n "$TAG" ]; then
-          echo "Resolving release by tag: $TAG"
-          release_json=$(curl --fail --silent --show-error \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${API}/releases/tags/${TAG}")
-        else
-          echo "Resolving latest published release from ${OWNER}/${REPO}"
-          release_json=$(curl --fail --silent --show-error \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${API}/releases?per_page=1")
-          release_json=$(echo "$release_json" | jq '.[0]')
-        fi
-
-        release_id=$(echo "$release_json" | jq -r '.id')
-        release_tag=$(echo "$release_json" | jq -r '.tag_name')
-        is_draft=$(echo "$release_json" | jq -r '.draft')
-        echo "Release ID: $release_id (tag=$release_tag, draft=$is_draft)"
-
-        INSTALL_MODE="${{ env.PRERELEASE_INSTALL_MODE }}"
-        if [ "$INSTALL_MODE" = "setup" ]; then
-          asset_filter='.[] | select(.name | test("^kaiden-.*-setup-x64\\.exe$")) | .browser_download_url'
-          asset_label="setup-x64.exe"
-        else
-          asset_filter='.[] | select(.name | test("^kaiden-.*-x64\\.exe$")) | select(.name | test("setup") | not) | .browser_download_url'
-          asset_label="portable x64.exe"
-        fi
-
-        url=$(curl --fail --silent --show-error \
-          -H "Accept: application/vnd.github+json" \
-          -H "Authorization: Bearer ${GH_TOKEN}" \
-          -H "X-GitHub-Api-Version: 2022-11-28" \
-          "${API}/releases/${release_id}/assets" \
-          | jq -r "$asset_filter" \
-          | head -n 1)
-
-        if [ -z "$url" ] || [ "$url" = "null" ]; then
-          echo "::error::No Windows ${asset_label} asset on ${release_tag}"
-          exit 1
-        fi
-
-        echo "Kaiden testing prerelease url: ${url}"
-        echo "PRERELEASE_URL=${url}" >> "$GITHUB_ENV"
+    - name: Prepare remote params
+      timeout-minutes: 3
+      env:
+        PODMAN_PROVIDER: ${{ env.PODMAN_PROVIDER }}
+      run: bash .github/scripts/workspace-e2e-runner.sh prepare-params
 
     - name: Create instance
+      timeout-minutes: 15
       uses: podman-desktop/e2e/.github/actions/create-instance@77d4a1ea4f361dddd1fa231ccf74392dcac5c447
       with:
         mapt-image: ${{ env.MAPT_IMAGE || '' }}
@@ -223,364 +175,135 @@ jobs:
         arm-client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
 
     - name: Check instance system info
+      timeout-minutes: 3
       uses: podman-desktop/e2e/.github/actions/instance-system-info@77d4a1ea4f361dddd1fa231ccf74392dcac5c447
 
     - name: Emulate X session
+      timeout-minutes: 3
       uses: podman-desktop/e2e/.github/actions/emulate-x-session@77d4a1ea4f361dddd1fa231ccf74392dcac5c447
 
     - name: Setup SSH helpers
+      timeout-minutes: 3
       run: |
         HOST="$(cat username)@$(cat host)"
         echo "REMOTE_HOST=$HOST" >> $GITHUB_ENV
 
-        cat > "$GITHUB_WORKSPACE/.ssh-helpers.sh" <<'SCRIPT'
-        run_remote() {
-          local encoded
-          encoded=$(printf '%s' "$1" | iconv -t UTF-16LE | base64 -w 0)
-          ssh $SSH_OPTS "$REMOTE_HOST" "powershell -NoProfile -EncodedCommand $encoded"
-        }
-
-        run_remote_retry() {
-          local max_attempts="${1:-3}"
-          local script delay attempt
-          if [[ "$max_attempts" =~ ^[0-9]+$ ]]; then
-            shift
-          else
-            max_attempts=3
-          fi
-          script="$1"
-          for attempt in $(seq 1 "$max_attempts"); do
-            echo "Remote attempt ${attempt}/${max_attempts}..."
-            if run_remote "$script"; then
-              return 0
-            fi
-            if [ "$attempt" -lt "$max_attempts" ]; then
-              delay=$((10 * attempt))
-              echo "Attempt ${attempt} failed, retrying in ${delay}s..."
-              sleep "$delay"
-            fi
-          done
-          echo "All ${max_attempts} remote attempts failed"
-          return 1
-        }
-        SCRIPT
-
     - name: Upload remote helper scripts
+      timeout-minutes: 3
       shell: bash
       run: |
-        source "$GITHUB_WORKSPACE/.ssh-helpers.sh"
+        source .github/scripts/workspace-e2e-runner.sh
         run_remote '
           $ciScripts = Join-Path $env:USERPROFILE "ci-scripts"
           if (-not (Test-Path $ciScripts)) { New-Item -ItemType Directory -Path $ciScripts -Force | Out-Null }
         '
         scp $SSH_OPTS .github/scripts/windows-remote-helpers.ps1 "$REMOTE_HOST:ci-scripts/windows-remote-helpers.ps1"
+        scp $SSH_OPTS e2e-params.json "$REMOTE_HOST:ci-scripts/e2e-params.json"
 
     - name: Configure Podman machine defaults on remote host
+      timeout-minutes: 3
       shell: bash
       run: |
-        source "$GITHUB_WORKSPACE/.ssh-helpers.sh"
-        run_remote '
-          . "$env:USERPROFILE\ci-scripts\windows-remote-helpers.ps1"
-          Set-PodmanMachineDefaults
-        '
+        source .github/scripts/workspace-e2e-runner.sh
+        run_e2e_step SetPodmanMachineDefaults
 
     - name: Install Node.js and pnpm on remote host
-      timeout-minutes: 10
-      shell: bash
-      run: |
-        source "$GITHUB_WORKSPACE/.ssh-helpers.sh"
-        FORK="${{ env.FORK }}"
-        BRANCH="${{ env.BRANCH }}"
-        REPO="${{ env.TARGET_REPO }}"
-
-        NVMRC=$(curl -fsSL "https://raw.githubusercontent.com/${FORK}/${REPO}/${BRANCH}/.nvmrc" 2>/dev/null \
-          || cat "$GITHUB_WORKSPACE/.nvmrc")
-        NVMRC_ONELINE=$(echo "$NVMRC" | tr -d '\r\n' | xargs)
-        echo "Node version from .nvmrc (${FORK}/${REPO}@${BRANCH}): ${NVMRC_ONELINE}"
-
-        echo "::group::Install Node.js"
-        run_remote_retry 3 '
-          . "$env:USERPROFILE\ci-scripts\windows-remote-helpers.ps1"
-          Install-KaidenNodeToolchain -NvmrcVersion "'"$NVMRC_ONELINE"'"
-        '
-        echo "::endgroup::"
-
-    - name: Install git on remote host
       timeout-minutes: 5
       shell: bash
       run: |
-        source "$GITHUB_WORKSPACE/.ssh-helpers.sh"
+        source .github/scripts/workspace-e2e-runner.sh
+        echo "::group::Install Node.js"
+        run_e2e_step InstallNode
+        echo "::endgroup::"
 
+    - name: Install git on remote host
+      timeout-minutes: 3
+      shell: bash
+      run: |
+        source .github/scripts/workspace-e2e-runner.sh
         echo "::group::Install Git"
-        run_remote_retry 3 '
-          . "$env:USERPROFILE\ci-scripts\windows-remote-helpers.ps1"
-          if (Get-Command git -ErrorAction SilentlyContinue) {
-            Write-Host "Git already installed: $(git version)"
-            exit 0
-          }
-
-          $ProgressPreference = "SilentlyContinue"
-          $gitVersion = "2.42.0.2"
-          $toolsDir = Join-Path $env:USERPROFILE "tools"
-          if (-not (Test-Path $toolsDir)) { New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null }
-
-          $gitDir = "$toolsDir\git"
-          if (-not (Test-Path $gitDir)) {
-            Invoke-DownloadWithRetry -Uri "https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.2/MinGit-$gitVersion-64-bit.zip" -OutFile "$toolsDir\git.zip" -MinBytes 1000000
-            Expand-Archive -Path "$toolsDir\git.zip" -DestinationPath $gitDir -Force
-            Remove-Item "$toolsDir\git.zip" -Force
-          }
-
-          $env:PATH = "$gitDir\cmd;$env:PATH"
-          [System.Environment]::SetEnvironmentVariable("PATH", "$gitDir\cmd;$([System.Environment]::GetEnvironmentVariable("PATH", "User"))", [System.EnvironmentVariableTarget]::User)
-
-          git version
-        '
+        run_e2e_step InstallGit
         echo "::endgroup::"
 
     - name: Clone Kaiden and install Playwright test dependencies
       timeout-minutes: 20
       shell: bash
       run: |
-        source "$GITHUB_WORKSPACE/.ssh-helpers.sh"
-        FORK="${{ env.FORK }}"
-        BRANCH="${{ env.BRANCH }}"
-        REPO="${{ env.TARGET_REPO }}"
-
+        source .github/scripts/workspace-e2e-runner.sh
         echo "::group::Clone and install Playwright deps"
-        run_remote_retry 3 '
-          . "$env:USERPROFILE\ci-scripts\windows-remote-helpers.ps1"
-          $workDir = Join-Path $env:USERPROFILE "workspace"
-          if (-not (Test-Path $workDir)) { New-Item -ItemType Directory -Path $workDir -Force | Out-Null }
-          cd $workDir
-
-          $repo = "'"$REPO"'"
-          $fork = "'"$FORK"'"
-          $branch = "'"$BRANCH"'"
-
-          if (-not (Test-Path $repo)) {
-            Invoke-CommandWithRetry -Label "Clone repository" -Action {
-              git clone --branch $branch --single-branch "https://github.com/$fork/$repo.git"
-            }
-          } else {
-            Write-Host "Repo already cloned, fetching..."
-            cd $repo
-            Invoke-CommandWithRetry -Label "Fetch and checkout branch" -Action {
-              git fetch --all
-              git checkout $branch
-              git pull --ff-only origin $branch
-            }
-            cd ..
-          }
-
-          Install-KaidenPlaywrightTestDependencies -RepoDir (Join-Path $workDir $repo)
-        '
+        run_e2e_step CloneAndInstallDeps
         echo "::endgroup::"
 
     - name: Install Podman on remote host
-      timeout-minutes: 15
+      timeout-minutes: 5
       shell: bash
-      env:
-        PODMAN_DL_URL: ${{ env.PODMAN_URL }}
       run: |
-        source "$GITHUB_WORKSPACE/.ssh-helpers.sh"
-
+        source .github/scripts/workspace-e2e-runner.sh
         echo "::group::Install Podman"
-        run_remote_retry 3 '
-          . "$env:USERPROFILE\ci-scripts\windows-remote-helpers.ps1"
-          Install-PodmanCli -PodmanDownloadUrl "'"$PODMAN_DL_URL"'"
-        '
+        run_e2e_step InstallPodman
         echo "::endgroup::"
 
     - name: Initialize and start Podman machine
-      timeout-minutes: 15
+      timeout-minutes: 5
       shell: bash
       run: |
-        source "$GITHUB_WORKSPACE/.ssh-helpers.sh"
-        PROVIDER="${{ env.PODMAN_PROVIDER }}"
-
+        source .github/scripts/workspace-e2e-runner.sh
         echo "::group::Init and start Podman machine"
-        run_remote_retry 3 '
-          . "$env:USERPROFILE\ci-scripts\windows-remote-helpers.ps1"
-          Initialize-AndStartPodmanMachine -Provider "'"$PROVIDER"'"
-        '
+        run_e2e_step InitPodman
         echo "::endgroup::"
 
     - name: Upload secrets to remote host
+      timeout-minutes: 3
       shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
       run: |
-        echo "PODMANDESKTOP_CI_BOT_TOKEN=${{ secrets.GITHUB_TOKEN }}" > secrets.txt
-        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> secrets.txt
-        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> secrets.txt
-        echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> secrets.txt
-        echo "MISTRAL_API_KEY=${{ secrets.MISTRAL_API_KEY }}" >> secrets.txt
-        if [ -n "${PRERELEASE_TOKEN}" ]; then
-          echo "PRERELEASE_TOKEN=${PRERELEASE_TOKEN}" >> secrets.txt
-        fi
-
-        scp $SSH_OPTS secrets.txt "$REMOTE_HOST:secrets.txt"
-        rm -f secrets.txt
+        secrets_dir="$RUNNER_TEMP/workspace-e2e-secrets"
+        bash .github/scripts/workspace-e2e-runner.sh write-secrets "$secrets_dir"
+        scp $SSH_OPTS "$secrets_dir/install-secrets.txt" "$REMOTE_HOST:install-secrets.txt"
+        scp $SSH_OPTS "$secrets_dir/secrets.txt" "$REMOTE_HOST:secrets.txt"
 
     - name: Install Kaiden Windows prerelease
-      timeout-minutes: 15
+      timeout-minutes: 5
       shell: bash
       run: |
-        source "$GITHUB_WORKSPACE/.ssh-helpers.sh"
-        OWNER="${{ env.PRERELEASE_OWNER }}"
-        REPO="${{ env.PRERELEASE_REPO }}"
-        TAG="${{ env.PRERELEASE_TAG }}"
-        DOWNLOAD_URL="${{ env.PRERELEASE_URL }}"
-        INSTALL_MODE="${{ env.PRERELEASE_INSTALL_MODE }}"
-
-        echo "::group::Install Kaiden Windows prerelease (${INSTALL_MODE}) from ${OWNER}/${REPO}"
-        run_remote_retry 3 '
-          . "$env:USERPROFILE\ci-scripts\windows-remote-helpers.ps1"
-          $secretsFile = Join-Path $env:USERPROFILE "secrets.txt"
-          if (Test-Path $secretsFile) {
-            Get-Content $secretsFile | ForEach-Object {
-              if (-not $_.StartsWith("#") -and -not [string]::IsNullOrWhiteSpace($_)) {
-                $key, $value = $_ -split "=", 2
-                Set-Item -Path "env:$($key.Trim())" -Value $value.Trim()
-              }
-            }
-          }
-
-          $installDir = Join-Path $env:USERPROFILE "tools\kaiden"
-          $token = $env:PRERELEASE_TOKEN
-          if ([string]::IsNullOrWhiteSpace($token)) { $token = "" }
-
-          $params = @{
-            Owner = "'"$OWNER"'"
-            Repo = "'"$REPO"'"
-            InstallDir = $installDir
-            InstallMode = "'"$INSTALL_MODE"'"
-            Token = $token
-          }
-          if ("'"$TAG"'") { $params.Tag = "'"$TAG"'" }
-          if ("'"$DOWNLOAD_URL"'") { $params.DownloadUrl = "'"$DOWNLOAD_URL"'" }
-
-          Install-KaidenPrereleaseBinary @params
-        '
+        source .github/scripts/workspace-e2e-runner.sh
+        echo "::group::Install Kaiden Windows prerelease"
+        run_e2e_step InstallPrerelease
         echo "::endgroup::"
 
     - name: Run Kaiden Workspace Playwright E2E tests
-      timeout-minutes: 90
       shell: bash
       run: |
-        source "$GITHUB_WORKSPACE/.ssh-helpers.sh"
-        PROVIDER="${{ env.PODMAN_PROVIDER }}"
-        NPM_TARGET="${{ env.NPM_TARGET }}"
-        ENV_VARS="${{ env.ENV_VARS }}"
-        REPO="${{ env.TARGET_REPO }}"
-
+        source .github/scripts/workspace-e2e-runner.sh
         echo "::group::Run E2E tests"
-        run_remote '
-          $workDir = Join-Path $env:USERPROFILE "workspace\'"$REPO"'"
-          cd $workDir
-
-          $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
-          if ($userPath) { $env:PATH = "$userPath;$env:PATH" }
-
-          $env:CI = "true"
-          $env:CONTAINERS_MACHINE_PROVIDER = "'"$PROVIDER"'"
-
-          # Load secrets
-          $secretsFile = Join-Path $env:USERPROFILE "secrets.txt"
-          if (Test-Path $secretsFile) {
-            Get-Content $secretsFile | ForEach-Object {
-              if (-not $_.StartsWith("#") -and -not [string]::IsNullOrWhiteSpace($_)) {
-                $key, $value = $_ -split "=", 2
-                Set-Item -Path "env:$($key.Trim())" -Value $value.Trim()
-              }
-            }
-            Write-Host "Secrets loaded"
-          }
-
-          # Load custom env vars
-          $envVarsStr = "'"$ENV_VARS"'"
-          if ($envVarsStr) {
-            $envVarsStr -split "," | ForEach-Object {
-              $parts = $_ -split "=", 2
-              if ($parts.Count -eq 2) {
-                Set-Item -Path "env:$($parts[0].Trim())" -Value $parts[1].Trim()
-              }
-            }
-          }
-
-          $kaidenPathFile = Join-Path $env:USERPROFILE "tools\kaiden\kaiden-binary-path.txt"
-          if (-not (Test-Path $kaidenPathFile)) {
-            Write-Host "ERROR: Kaiden binary path file not found at $kaidenPathFile"
-            Write-Host "Run daily-testing-build first and ensure Install Kaiden Windows prerelease succeeded."
-            exit 1
-          }
-          $env:KAIDEN_BINARY = (Get-Content $kaidenPathFile -Raw).Trim()
-          if (-not (Test-Path $env:KAIDEN_BINARY)) {
-            Write-Host "ERROR: Kaiden binary not found at $env:KAIDEN_BINARY"
-            exit 1
-          }
-          Write-Host "KAIDEN_BINARY=$env:KAIDEN_BINARY"
-
-          $npmTarget = "'"$NPM_TARGET"'"
-          if ($npmTarget -eq "test:e2e:workspaces") {
-            Write-Host "Prerelease mode: running test:e2e:workspaces:run (skip dev app build)"
-            $npmTarget = "test:e2e:workspaces:run"
-          }
-
-          Write-Host "Running: pnpm $npmTarget"
-          Write-Host "Provider: $env:CONTAINERS_MACHINE_PROVIDER"
-          Write-Host "Working dir: $workDir"
-
-          . "$env:USERPROFILE\ci-scripts\windows-remote-helpers.ps1"
-          Prepare-WindowsDesktopForE2E -Provider $env:CONTAINERS_MACHINE_PROVIDER
-
-          $recordingDir = Join-Path $workDir "tests\playwright\output\screen-recordings"
-          $recordingStarted = $false
-          try {
-            Start-E2EScreenRecording -OutputDir $recordingDir
-            $recordingStarted = $true
-            pnpm $npmTarget
-          } finally {
-            if ($recordingStarted) {
-              Stop-E2EScreenRecording -OutputDir $recordingDir | Out-Null
-            }
-          }
-
-          # Clean up secrets
-          if (Test-Path $secretsFile) { Remove-Item $secretsFile -Force }
-        '
+        run_e2e_step RunE2ETests
         echo "::endgroup::"
 
     - name: Collect test results
       if: always()
       shell: bash
-      run: |
-        REPO="${{ env.TARGET_REPO }}"
-
-        echo "::group::Collect JUnit results via SCP"
-        mkdir -p results
-        scp $SSH_OPTS "$REMOTE_HOST:workspace/$REPO/tests/playwright/*results.xml" results/ 2>/dev/null || echo "No JUnit XML found"
-        echo "::endgroup::"
+      run: bash .github/scripts/workspace-e2e-runner.sh collect junit
 
     - name: Collect failure diagnostics
       if: failure()
+      env:
+        SCRUB_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        SCRUB_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        SCRUB_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        SCRUB_MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        SCRUB_PRERELEASE_TOKEN: ${{ secrets.KAIDEN_BOT_TOKEN }}
       shell: bash
-      run: |
-        REPO="${{ env.TARGET_REPO }}"
-
-        echo "::group::Collect failure diagnostics via SCP"
-        mkdir -p results
-        scp $SSH_OPTS -r "$REMOTE_HOST:workspace/$REPO/tests/playwright/output/*" results/ 2>/dev/null || echo "No playwright output found"
-        scp $SSH_OPTS -r "$REMOTE_HOST:workspace/$REPO/tests/playwright/output/screen-recordings" results/screen-recordings 2>/dev/null || echo "No screen recordings found"
-
-        echo "Collected failure diagnostics:"
-        find results -type f | sort || true
-        echo "::endgroup::"
+      run: bash .github/scripts/workspace-e2e-runner.sh collect failure
 
     - name: Cleanup secrets on remote host
       if: always()
       shell: bash
       run: |
-        ssh $SSH_OPTS "$REMOTE_HOST" 'Remove-Item -Path (Join-Path $env:USERPROFILE "secrets.txt") -Force -ErrorAction SilentlyContinue'
+        ssh $SSH_OPTS "$REMOTE_HOST" 'Remove-Item -Path (Join-Path $env:USERPROFILE "secrets.txt"), (Join-Path $env:USERPROFILE "install-secrets.txt") -Force -ErrorAction SilentlyContinue'
 
     - name: Create workflow run attributes
       if: always()
@@ -601,6 +324,7 @@ jobs:
 
     - name: Destroy instance
       if: always()
+      timeout-minutes: 5
       uses: podman-desktop/e2e/.github/actions/destroy-instance@77d4a1ea4f361dddd1fa231ccf74392dcac5c447
       with:
         mapt-image: ${{ env.MAPT_IMAGE || '' }}

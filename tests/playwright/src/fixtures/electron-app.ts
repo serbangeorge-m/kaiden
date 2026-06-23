@@ -274,12 +274,6 @@ function prepareElectronEnv(): Record<string, string> {
   }
   // Remove Electron-specific variables that shouldn't be passed
   delete electronEnv.ELECTRON_RUN_AS_NODE;
-  // Build-time fuse flag only — runtime inspect env breaks Playwright/CDP attach on Windows.
-  delete electronEnv.ELECTRON_ENABLE_INSPECT;
-  // Opens a competing Node inspector and breaks Playwright CDP on Windows CI.
-  delete electronEnv.ELECTRON_ENABLE_STACK_DUMPING;
-  // Verbose Chromium logging can leak secrets into CI logs and failure artifacts.
-  delete electronEnv.ELECTRON_ENABLE_LOGGING;
 
   return electronEnv;
 }
