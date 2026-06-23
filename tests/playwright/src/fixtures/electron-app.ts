@@ -419,14 +419,19 @@ export async function launchElectronApp(): Promise<ElectronApplication> {
 }
 
 async function waitForUsablePage(electronApp: ElectronApplication): Promise<Page> {
-  let page: Page;
-  if (isProductionMode) {
-    page = await electronApp.firstWindow({ timeout: TIMEOUTS.DEFAULT });
-  } else {
-    page = await getDevModeWindow(electronApp);
+  let page: Page | undefined;
+  try {
+    if (isProductionMode) {
+      page = await electronApp.firstWindow({ timeout: TIMEOUTS.DEFAULT });
+    } else {
+      page = await getDevModeWindow(electronApp);
+    }
+  } catch {
+    // firstWindow()/getDevModeWindow() can throw if the returned page closes
+    // before CDP is fully attached (Playwright #29386). Fall through to waitForEvent.
   }
 
-  if (page.isClosed()) {
+  if (!page || page.isClosed()) {
     page = await electronApp.waitForEvent('window', {
       timeout: TIMEOUTS.NON_DEVTOOLS_WINDOW,
       predicate: candidate => !candidate.isClosed() && !isDevToolsWindow(candidate.url()),

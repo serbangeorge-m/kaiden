@@ -53,7 +53,7 @@ export async function saveTestArtifacts(page: Page, testInfo: TestInfo): Promise
     attach(testInfo, 'screenshot', screenshotPath, 'image/png');
   }
   const video = page.video();
-  if (video && failed && !process.env.CI) {
+  if (video && failed) {
     const videoPath = testInfo.outputPath('video.webm');
     await video.saveAs(videoPath).catch(() => {});
     attach(testInfo, 'video', videoPath, 'video/webm');

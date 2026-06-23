@@ -265,10 +265,9 @@ function Dismiss-WindowsShellOverlays {
   }
 }
 
-function Ensure-PodmanMachineRunning {
+function Initialize-PodmanEnvironment {
   param(
-    [string]$Provider = 'wsl',
-    [int]$CommandTimeoutSeconds = 120
+    [Parameter(Mandatory)][string]$Provider
   )
 
   $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
@@ -282,12 +281,21 @@ function Ensure-PodmanMachineRunning {
   }
 
   $env:CONTAINERS_MACHINE_PROVIDER = $Provider
+}
+
+function Ensure-PodmanMachineRunning {
+  param(
+    [string]$Provider = 'wsl',
+    [int]$CommandTimeoutSeconds = 120
+  )
+
+  Initialize-PodmanEnvironment -Provider $Provider
   Write-Host "Ensuring Podman machine is running before E2E tests (provider=$Provider)..."
 
   try {
     Invoke-PodmanCliWithTimeout -PodmanArgs @('machine', 'start') -TimeoutSeconds $CommandTimeoutSeconds
   } catch {
-    if ($_.Exception.Message -match 'exit code 125|already running') {
+    if ($_.Exception.Message -match 'already running') {
       Write-Host 'Podman machine already running'
     } else {
       throw
@@ -305,17 +313,7 @@ function Assert-PodmanMachineReady {
     [int]$MaxAttempts = 3
   )
 
-  $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
-  if ($userPath) {
-    $env:PATH = "$userPath;$env:PATH"
-  }
-
-  if (-not (Get-Command podman -ErrorAction SilentlyContinue)) {
-    $podmanExe = Resolve-PodmanExecutable
-    Add-PodmanToPath -PodmanExe $podmanExe
-  }
-
-  $env:CONTAINERS_MACHINE_PROVIDER = $Provider
+  Initialize-PodmanEnvironment -Provider $Provider
   Write-Host "Verifying Podman machine readiness (provider=$Provider)..."
 
   for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
