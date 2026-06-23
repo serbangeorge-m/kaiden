@@ -288,6 +288,18 @@ jobs:
       shell: bash
       run: bash .github/scripts/workspace-e2e-runner.sh collect junit
 
+    - name: Verify test results were produced
+      if: always()
+      shell: bash
+      run: |
+        if compgen -G "results/*results.xml" > /dev/null; then
+          echo "JUnit results found:"
+          ls -la results/*results.xml
+        else
+          echo "::error::No JUnit test results found — Playwright did not run or did not write junit-results.xml"
+          exit 1
+        fi
+
     - name: Collect failure diagnostics
       if: failure()
       env:
@@ -346,7 +358,7 @@ jobs:
         include_passed: true
         detailed_summary: true
         annotate_only: true
-        require_tests: false
+        require_tests: true
         report_paths: '**/*results.xml'
 
     - name: Upload test artifacts

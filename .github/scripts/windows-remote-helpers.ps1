@@ -632,6 +632,9 @@ function Invoke-KaidenWorkspaceE2ERemoteStep {
         Start-E2EScreenRecording -OutputDir $recordingDir
         $recordingStarted = $true
         pnpm $npmTarget
+        if ($LASTEXITCODE -ne 0) {
+          throw "pnpm $npmTarget failed with exit code $LASTEXITCODE"
+        }
       } finally {
         if ($recordingStarted) {
           Stop-E2EScreenRecording -OutputDir $recordingDir | Out-Null

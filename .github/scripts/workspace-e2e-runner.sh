@@ -240,11 +240,22 @@ workspace_e2e_scrub_file() {
 workspace_e2e_collect_junit() {
   local results_dir="${GITHUB_WORKSPACE:?}/results"
   local remote_base="workspace/${TARGET_REPO:?}/tests/playwright"
+  local collected=0
 
   echo "::group::Collect JUnit results via SCP"
   mkdir -p "$results_dir"
-  scp $SSH_OPTS "$REMOTE_HOST:${remote_base}/*results.xml" "$results_dir/" 2>/dev/null \
-    || echo "No JUnit XML found"
+  if scp $SSH_OPTS "$REMOTE_HOST:${remote_base}/output/junit-results.xml" "$results_dir/" 2>/dev/null; then
+    collected=1
+  fi
+  if scp $SSH_OPTS "$REMOTE_HOST:${remote_base}/output/*results.xml" "$results_dir/" 2>/dev/null; then
+    collected=1
+  fi
+  if scp $SSH_OPTS "$REMOTE_HOST:${remote_base}/*results.xml" "$results_dir/" 2>/dev/null; then
+    collected=1
+  fi
+  if [ "$collected" -eq 0 ]; then
+    echo "No JUnit XML found"
+  fi
   echo "::endgroup::"
 }
 
