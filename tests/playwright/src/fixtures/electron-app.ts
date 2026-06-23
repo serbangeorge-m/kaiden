@@ -278,6 +278,8 @@ function prepareElectronEnv(): Record<string, string> {
   delete electronEnv.ELECTRON_ENABLE_INSPECT;
   // Opens a competing Node inspector and breaks Playwright CDP on Windows CI.
   delete electronEnv.ELECTRON_ENABLE_STACK_DUMPING;
+  // Verbose Chromium logging can leak secrets into CI logs and failure artifacts.
+  delete electronEnv.ELECTRON_ENABLE_LOGGING;
 
   return electronEnv;
 }

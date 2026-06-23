@@ -89,9 +89,10 @@ const config: PlaywrightTestConfig & {
       use: {
         // Auto-detected provider makes resourceSetup a no-op; workspace tests manage their own providers
         resource: 'ollama',
-        trace: 'retain-on-failure',
+        // Traces/videos can capture API traffic and UI with secrets — failure-only, no trace on CI.
+        trace: process.env.CI ? 'off' : 'retain-on-failure',
         video: 'retain-on-failure',
-        screenshot: 'on',
+        screenshot: 'only-on-failure',
       },
       testIgnore: podmanAvailable && (!process.env.CI || process.env.WORKSPACE_TESTS_CI) ? [] : ['**/*'],
     },

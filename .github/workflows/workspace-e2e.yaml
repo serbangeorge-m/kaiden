@@ -129,7 +129,8 @@ jobs:
         echo "PRERELEASE_URL=${{ github.event.inputs.prerelease_url || '' }}" >> $GITHUB_ENV
         echo "PRERELEASE_INSTALL_MODE=${{ github.event.inputs.prerelease_install_mode || 'setup' }}" >> $GITHUB_ENV
         env_vars="${{ github.event.inputs.env_vars || env.DEFAULT_ENV_VARS }}"
-        debug_flags="KAIDEN_E2E_BOOTSTRAP_DEBUG=true,ELECTRON_ENABLE_LOGGING=true,DEBUGGING_PORT=9222"
+        # CDP port only — avoid ELECTRON_ENABLE_LOGGING (secrets in stderr/logs/artifacts).
+        debug_flags="DEBUGGING_PORT=9222"
         for flag in ${debug_flags//,/ }; do
           if [[ ",$env_vars," != *",$flag,"* ]]; then
             env_vars="$env_vars,$flag"
@@ -555,18 +556,31 @@ jobs:
       run: |
         REPO="${{ env.TARGET_REPO }}"
 
-        echo "::group::Collect results via SCP"
+        echo "::group::Collect JUnit results via SCP"
         mkdir -p results
+        scp $SSH_OPTS "$REMOTE_HOST:workspace/$REPO/tests/playwright/*results.xml" results/ 2>/dev/null || echo "No JUnit XML found"
+        echo "::endgroup::"
 
+    - name: Collect failure diagnostics
+      if: failure()
+      shell: bash
+      run: |
+        REPO="${{ env.TARGET_REPO }}"
+
+        echo "::group::Collect failure diagnostics via SCP"
+        mkdir -p results
         scp $SSH_OPTS -r "$REMOTE_HOST:workspace/$REPO/tests/playwright/output/*" results/ 2>/dev/null || echo "No playwright output found"
         scp $SSH_OPTS -r "$REMOTE_HOST:workspace/$REPO/tests/playwright/output/screen-recordings" results/screen-recordings 2>/dev/null || echo "No screen recordings found"
-        scp $SSH_OPTS "$REMOTE_HOST:workspace/$REPO/tests/playwright/*results.xml" results/ 2>/dev/null || echo "No JUnit XML found"
-        scp $SSH_OPTS "$REMOTE_HOST:workspace/$REPO/stdout.txt" results/ 2>/dev/null || true
-        scp $SSH_OPTS "$REMOTE_HOST:workspace/$REPO/stderr.txt" results/ 2>/dev/null || true
 
-        echo "Collected results:"
+        echo "Collected failure diagnostics:"
         find results -type f | sort || true
         echo "::endgroup::"
+
+    - name: Cleanup secrets on remote host
+      if: always()
+      shell: bash
+      run: |
+        ssh $SSH_OPTS "$REMOTE_HOST" 'Remove-Item -Path (Join-Path $env:USERPROFILE "secrets.txt") -Force -ErrorAction SilentlyContinue'
 
     - name: Create workflow run attributes
       if: always()
@@ -613,10 +627,11 @@ jobs:
 
     - name: Upload test artifacts
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-      if: always()
+      if: failure()
       with:
         name: workspace-e2e-win${{ env.WINDOWS_VERSION }}-${{ env.PODMAN_PROVIDER }}
         path: |
           results/**
           **/workflow-run-attributes.json
           **/junit-infra-failure-report.xml
+        retention-days: 7
