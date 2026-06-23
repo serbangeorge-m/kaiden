@@ -55,6 +55,11 @@ run_e2e_step() {
   run_remote_retry 3 '. "$env:USERPROFILE\ci-scripts\windows-remote-helpers.ps1"; Invoke-KaidenWorkspaceE2ERemoteStep -Step '"$step"
 }
 
+# Playwright runs once — no SSH retry (retries belong to Playwright config only when enabled).
+run_e2e_test_step() {
+  run_remote '. "$env:USERPROFILE\ci-scripts\windows-remote-helpers.ps1"; Invoke-KaidenWorkspaceE2ERemoteStep -Step RunE2ETests'
+}
+
 workspace_e2e_fail() {
   echo "::error::$1" >&2
   exit 1
@@ -259,6 +264,38 @@ workspace_e2e_collect_junit() {
   echo "::endgroup::"
 }
 
+workspace_e2e_verify_junit() {
+  local results_dir="${GITHUB_WORKSPACE:?}/results"
+  local junit_file summary tests failures errors skipped executed
+
+  if ! compgen -G "${results_dir}/*results.xml" > /dev/null; then
+    workspace_e2e_fail "No JUnit test results found — Playwright did not write junit-results.xml"
+  fi
+
+  echo "JUnit results found:"
+  ls -la "${results_dir}"/*results.xml
+
+  for junit_file in "${results_dir}"/*results.xml; do
+    summary=$(python3 -c "
+import xml.etree.ElementTree as ET
+root = ET.parse('${junit_file}').getroot()
+tests = failures = errors = skipped = 0
+for suite in root.iter('testsuite'):
+    tests += int(suite.get('tests', 0))
+    failures += int(suite.get('failures', 0))
+    errors += int(suite.get('errors', 0))
+    skipped += int(suite.get('skipped', 0))
+print(tests, failures, errors, skipped)
+")
+    read -r tests failures errors skipped <<< "$summary"
+    executed=$((tests - skipped))
+    echo "${junit_file}: tests=${tests} executed=${executed} skipped=${skipped} failures=${failures} errors=${errors}"
+    if [ "$executed" -eq 0 ]; then
+      workspace_e2e_fail "All ${tests} tests were skipped — check API keys and PODMAN_ENABLED on the remote host"
+    fi
+  done
+}
+
 workspace_e2e_collect_failure() {
   local results_dir="${GITHUB_WORKSPACE:?}/results"
   local remote_base="workspace/${TARGET_REPO:?}/tests/playwright"
@@ -294,6 +331,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     resolve-prerelease) workspace_e2e_resolve_prerelease ;;
     prepare-params) workspace_e2e_prepare_params ;;
     write-secrets) workspace_e2e_write_secrets "${2:-.}" ;;
+    verify-junit) workspace_e2e_verify_junit ;;
     collect)
       : "${REMOTE_HOST:?REMOTE_HOST is required}"
       : "${SSH_OPTS:?SSH_OPTS is required}"
@@ -304,8 +342,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
       esac
       ;;
     *)
-      echo "usage: $0 resolve-prerelease|prepare-params|write-secrets <dir>|collect junit|failure" >&2
-      echo "or: source $0  # SSH helpers for run_e2e_step" >&2
+      echo "usage: $0 resolve-prerelease|prepare-params|write-secrets <dir>|verify-junit|collect junit|failure" >&2
+      echo "or: source $0  # SSH helpers for run_e2e_step / run_e2e_test_step" >&2
       exit 1
       ;;
   esac

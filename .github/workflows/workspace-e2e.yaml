@@ -276,11 +276,12 @@ jobs:
         echo "::endgroup::"
 
     - name: Run Kaiden Workspace Playwright E2E tests
+      timeout-minutes: 90
       shell: bash
       run: |
         source .github/scripts/workspace-e2e-runner.sh
         echo "::group::Run E2E tests"
-        run_e2e_step RunE2ETests
+        run_e2e_test_step
         echo "::endgroup::"
 
     - name: Collect test results
@@ -291,14 +292,7 @@ jobs:
     - name: Verify test results were produced
       if: always()
       shell: bash
-      run: |
-        if compgen -G "results/*results.xml" > /dev/null; then
-          echo "JUnit results found:"
-          ls -la results/*results.xml
-        else
-          echo "::error::No JUnit test results found — Playwright did not run or did not write junit-results.xml"
-          exit 1
-        fi
+      run: bash .github/scripts/workspace-e2e-runner.sh verify-junit
 
     - name: Collect failure diagnostics
       if: failure()

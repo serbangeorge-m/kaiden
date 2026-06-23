@@ -44,7 +44,7 @@ const config: PlaywrightTestConfig & {
 } = {
   testDir: './src',
   timeout: 180_000,
-  retries: process.env.CI ? 1 : 0,
+  retries: process.env.WORKSPACE_TESTS_CI ? 0 : process.env.CI ? 1 : 0,
 
   workers: 1,
 

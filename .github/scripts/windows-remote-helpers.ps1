@@ -430,6 +430,49 @@ function Import-KaidenWorkspaceSecrets {
   }
 }
 
+function Get-RequiredWorkspaceTestEnvVars {
+  param(
+    [Parameter(Mandatory)][string]$NpmTarget
+  )
+
+  switch ($NpmTarget) {
+    'test:e2e:workspaces:claude' { return @('ANTHROPIC_API_KEY') }
+    'test:e2e:workspaces:goose' { return @('OPENAI_API_KEY', 'MISTRAL_API_KEY') }
+    'test:e2e:workspaces:opencode' { return @('OPENAI_API_KEY', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'MISTRAL_API_KEY') }
+    'test:e2e:workspaces:openclaw' { return @('OPENAI_API_KEY', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'MISTRAL_API_KEY') }
+    'test:e2e:workspaces:run' { return @('ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'MISTRAL_API_KEY') }
+    default { return @('ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'MISTRAL_API_KEY') }
+  }
+}
+
+function Assert-RequiredWorkspaceTestEnv {
+  param(
+    [Parameter(Mandatory)][string]$NpmTarget
+  )
+
+  $secretsFile = Join-Path $env:USERPROFILE 'secrets.txt'
+  if (-not (Test-Path $secretsFile)) {
+    throw "secrets.txt missing at $secretsFile — upload secrets before running tests"
+  }
+
+  if ($env:PODMAN_ENABLED -ne 'true') {
+    throw 'PODMAN_ENABLED must be true for Windows workspace E2E (set via workflow env_vars)'
+  }
+
+  if (-not $env:WORKSPACE_TESTS_CI) {
+    throw 'WORKSPACE_TESTS_CI must be set for MAPT workspace E2E runs'
+  }
+
+  foreach ($var in (Get-RequiredWorkspaceTestEnvVars -NpmTarget $NpmTarget)) {
+    if ([string]::IsNullOrWhiteSpace((Get-Item -Path "env:$var" -ErrorAction SilentlyContinue).Value)) {
+      throw "${var} is not set — workspace tests will be skipped"
+    }
+    Write-Host "${var}=<set>"
+  }
+
+  Write-Host "PODMAN_ENABLED=$env:PODMAN_ENABLED WORKSPACE_TESTS_CI=$env:WORKSPACE_TESTS_CI"
+}
+
 function Clear-KaidenWorkspaceSecrets {
   param(
     [string[]]$SecretFileNames = @('secrets.txt', 'install-secrets.txt')
@@ -623,6 +666,8 @@ function Invoke-KaidenWorkspaceE2ERemoteStep {
       Write-Host "Running: pnpm $npmTarget"
       Write-Host "Provider: $env:CONTAINERS_MACHINE_PROVIDER"
       Write-Host "Working dir: $workDir"
+
+      Assert-RequiredWorkspaceTestEnv -NpmTarget $npmTarget
 
       Prepare-WindowsDesktopForE2E -Provider $env:CONTAINERS_MACHINE_PROVIDER
 
