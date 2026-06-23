@@ -452,7 +452,7 @@ function Assert-RequiredWorkspaceTestEnv {
 
   $secretsFile = Join-Path $env:USERPROFILE 'secrets.txt'
   if (-not (Test-Path $secretsFile)) {
-    throw "secrets.txt missing at $secretsFile — upload secrets before running tests"
+    throw "secrets.txt missing at $secretsFile - upload secrets before running tests"
   }
 
   if ($env:PODMAN_ENABLED -ne 'true') {
@@ -465,7 +465,7 @@ function Assert-RequiredWorkspaceTestEnv {
 
   foreach ($var in (Get-RequiredWorkspaceTestEnvVars -NpmTarget $NpmTarget)) {
     if ([string]::IsNullOrWhiteSpace((Get-Item -Path "env:$var" -ErrorAction SilentlyContinue).Value)) {
-      throw "${var} is not set — workspace tests will be skipped"
+      throw "${var} is not set - workspace tests will be skipped"
     }
     Write-Host "${var}=<set>"
   }
@@ -1086,7 +1086,7 @@ function Install-PodmanCli {
 
   $podmanExe = Resolve-PodmanExecutable
   Add-PodmanToPath -PodmanExe $podmanExe
-  # Avoid running podman.exe here — first launch can hang on WSL/machine setup and block SSH.
+  # Avoid running podman.exe here - first launch can hang on WSL/machine setup and block SSH.
   Write-Host "Podman installed at: $podmanExe"
 }
 
