@@ -44,7 +44,7 @@ const config: PlaywrightTestConfig & {
 } = {
   testDir: './src',
   timeout: 180_000,
-  retries: process.env.WORKSPACE_TESTS_CI ? 0 : process.env.CI ? 1 : 0,
+  retries: process.env.CI ? 1 : 0,
 
   workers: 1,
 
@@ -89,10 +89,9 @@ const config: PlaywrightTestConfig & {
       use: {
         // Auto-detected provider makes resourceSetup a no-op; workspace tests manage their own providers
         resource: 'ollama',
-        // Traces capture network traffic (API keys). Video/screen recording stay on for MAPT debugging.
-        trace: process.env.CI ? 'off' : 'retain-on-failure',
-        video: process.env.CI ? 'off' : 'retain-on-failure',
-        screenshot: 'only-on-failure',
+        trace: 'retain-on-failure',
+        video: 'retain-on-failure',
+        screenshot: 'on',
       },
       testIgnore: podmanAvailable && (!process.env.CI || process.env.WORKSPACE_TESTS_CI) ? [] : ['**/*'],
     },

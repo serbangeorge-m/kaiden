@@ -35,12 +35,8 @@ export async function saveTestArtifacts(page: Page, testInfo: TestInfo): Promise
   if (!shouldLaunchViaCdp()) {
     if (failed) {
       const tracePath = testInfo.outputPath('trace.zip');
-      if (process.env.CI) {
-        await context.tracing.stopChunk().catch(() => {});
-      } else {
-        await context.tracing.stopChunk({ path: tracePath }).catch(() => {});
-        attach(testInfo, 'trace', tracePath, 'application/zip');
-      }
+      await context.tracing.stopChunk({ path: tracePath }).catch(() => {});
+      attach(testInfo, 'trace', tracePath, 'application/zip');
     } else {
       await context.tracing.stopChunk().catch(() => {});
     }
@@ -52,6 +48,9 @@ export async function saveTestArtifacts(page: Page, testInfo: TestInfo): Promise
     });
     attach(testInfo, 'screenshot', screenshotPath, 'image/png');
   }
+  // saveAs() is safe to call while the page is still open — it copies the
+  // recording captured so far without waiting for page/context closure.
+  // Only video.delete() blocks until the page closes.
   const video = page.video();
   if (video && failed) {
     const videoPath = testInfo.outputPath('video.webm');

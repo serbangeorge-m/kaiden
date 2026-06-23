@@ -54,23 +54,13 @@ async function waitForInitializingScreenToDisappear(page: Page): Promise<void> {
   await expect(initializingScreen).toBeHidden({ timeout: TIMEOUTS.INITIALIZING_SCREEN });
 }
 
-async function clickWelcomeSkipButton(skipButton: Locator): Promise<void> {
-  if (process.platform === 'win32' && process.env.WORKSPACE_TESTS_CI) {
-    // Remote Windows (MAPT/RDP) keeps animating the welcome footer; scroll waits forever.
-    await skipButton.click({ force: true, timeout: TIMEOUTS.STANDARD });
-    return;
-  }
-
-  await skipButton.scrollIntoViewIfNeeded();
-  await skipButton.click({ timeout: TIMEOUTS.STANDARD });
-}
-
 async function dismissWelcomeOverlay(page: Page, welcomePage: Locator, skipButton: Locator): Promise<void> {
   await page.bringToFront();
   await page.keyboard.press('Escape').catch(() => undefined);
 
   for (let attempt = 1; attempt <= 3; attempt++) {
-    await clickWelcomeSkipButton(skipButton);
+    await skipButton.scrollIntoViewIfNeeded();
+    await skipButton.click({ timeout: TIMEOUTS.STANDARD });
 
     try {
       await expect(welcomePage).toBeHidden({ timeout: 5_000 });
