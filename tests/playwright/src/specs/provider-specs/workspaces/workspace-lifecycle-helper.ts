@@ -69,18 +69,20 @@ export function registerWorkspaceLifecycleTests(
   let workingDir: string | undefined;
   let countsBefore: { activeSessions: number; totalSessions: number; configuredAgents: number };
 
-  test.beforeAll(async ({ navigationBar }) => {
+  test.beforeAll(async ({ workerNavigationBar }) => {
     if (config.requiredResource) {
       const provider = PROVIDERS[config.requiredResource];
       if (!('autoDetected' in provider && provider.autoDetected)) {
-        const settingsPage = await navigationBar.navigateToSettingsPage();
+        const settingsPage = await workerNavigationBar.navigateToSettingsPage();
         await settingsPage.createResource(config.requiredResource, process.env[provider.envVarName]!);
+        // Warm navigation so inference providers finish registering models before the wizard opens.
+        await workerNavigationBar.navigateToWorkspacesPage();
       }
     }
     workingDir = mkdtempSync(join(homedir(), '.kdn-e2e-'));
   });
 
-  test.afterAll(async ({ navigationBar }) => {
+  test.afterAll(async ({ workerNavigationBar }) => {
     if (workingDir) {
       rmSync(workingDir, { recursive: true, force: true });
     }
@@ -88,7 +90,7 @@ export function registerWorkspaceLifecycleTests(
       const provider = PROVIDERS[config.requiredResource];
       if (!('autoDetected' in provider && provider.autoDetected)) {
         try {
-          const settingsPage = await navigationBar.navigateToSettingsPage();
+          const settingsPage = await workerNavigationBar.navigateToSettingsPage();
           await settingsPage.deleteResource(config.requiredResource);
         } catch (error) {
           console.error(`Failed to delete ${config.requiredResource} resource:`, error);
@@ -111,7 +113,7 @@ export function registerWorkspaceLifecycleTests(
     await createPage.continueToStep(WIZARD_STEP.AGENT_MODEL);
 
     await createPage.selectAgent(config.agent);
-    await expect(createPage.modelList.first()).toBeVisible();
+    await createPage.waitForModelCatalog();
     await config.selectModel(createPage);
 
     await createPage.continueToStep(WIZARD_STEP.TOOLS_SECRETS);

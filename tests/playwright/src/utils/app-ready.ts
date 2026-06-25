@@ -19,7 +19,7 @@
 import { type ElectronApplication, expect, type Locator, type Page } from '@playwright/test';
 import { type DialogOptions, SELECTORS, TIMEOUTS } from 'src/model/core/types';
 
-export async function waitForAppReady(page: Page, timeout = TIMEOUTS.DEFAULT): Promise<void> {
+export async function waitForAppReady(page: Page, timeout: number = TIMEOUTS.DEFAULT): Promise<void> {
   try {
     await expect(page.locator(SELECTORS.MAIN_ANY).first()).toBeVisible({ timeout });
   } catch (error) {
@@ -35,7 +35,7 @@ export async function waitForAppReady(page: Page, timeout = TIMEOUTS.DEFAULT): P
   await handleWelcomePageIfPresent(page);
 }
 
-export async function waitForNavigationReady(page: Page, timeout = TIMEOUTS.DEFAULT): Promise<void> {
+export async function waitForNavigationReady(page: Page, timeout: number = TIMEOUTS.DEFAULT): Promise<void> {
   await waitForAppReady(page, timeout);
   await expect(page.getByRole(SELECTORS.NAVIGATION.role, { name: SELECTORS.NAVIGATION.name })).toBeVisible({
     timeout,
@@ -47,16 +47,47 @@ async function waitForInitializingScreenToDisappear(page: Page): Promise<void> {
   await expect(initializingScreen).toBeHidden({ timeout: TIMEOUTS.INITIALIZING_SCREEN });
 }
 
+async function dismissWelcomeOverlay(page: Page, welcomePage: Locator, skipButton: Locator): Promise<void> {
+  await page.bringToFront();
+  await page.keyboard.press('Escape').catch(() => undefined);
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    // Packaged Windows + CDP: scrollIntoViewIfNeeded can hang waiting for layout stability.
+    await skipButton.click({ force: true, timeout: TIMEOUTS.STANDARD });
+
+    try {
+      await expect(welcomePage).toBeHidden({ timeout: 5_000 });
+      return;
+    } catch {
+      console.log(`Welcome overlay still visible after Skip click (attempt ${attempt}/3)`);
+      await page.keyboard.press('Escape').catch(() => undefined);
+    }
+  }
+
+  await expect(welcomePage).toBeHidden({ timeout: TIMEOUTS.STANDARD });
+}
+
 async function handleWelcomePageIfPresent(page: Page, timeout = 5_000): Promise<void> {
   const welcomePage = page.locator(SELECTORS.WELCOME_PAGE).first();
+  const skipButton = page.getByRole('button', { name: 'Skip', exact: true });
+  const guidedSetupButton = page.getByRole('button', { name: 'Start guided setup', exact: true });
+  const startOnboardingButton = page.getByRole('button', { name: 'Start onboarding', exact: true });
 
   try {
-    await expect(welcomePage).not.toBeVisible({ timeout: timeout });
+    await expect(welcomePage).not.toBeVisible({ timeout });
+    return;
   } catch {
-    const skipButton = page.getByRole('button', { name: 'Skip' });
-    await skipButton.click();
-    await expect(welcomePage).toBeHidden({ timeout: TIMEOUTS.STANDARD });
+    // Welcome screen is visible — dismiss it the same way as local / Podman Desktop e2e.
   }
+
+  await page.bringToFront();
+
+  // Extensions load sequentially and can block the welcome footer until ready.
+  const readyButton = guidedSetupButton.or(startOnboardingButton).or(skipButton);
+  await expect(readyButton.first()).toBeEnabled({ timeout: 60_000 });
+
+  await expect(skipButton).toBeEnabled({ timeout: TIMEOUTS.STANDARD });
+  await dismissWelcomeOverlay(page, welcomePage, skipButton);
 }
 
 export async function handleDialogIfPresent(

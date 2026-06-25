@@ -171,6 +171,17 @@ export class AgentWorkspaceCreatePage extends BasePage {
     return this.page.getByRole('table', { name: /models/ });
   }
 
+  async waitForModelCatalog(timeout: number = TIMEOUTS.DEFAULT): Promise<void> {
+    await expect
+      .poll(async () => await this.getModelTableRows().count(), {
+        timeout,
+        intervals: [500, 1_000, 2_000],
+        message: 'Model catalog did not populate in workspace wizard',
+      })
+      .toBeGreaterThan(0);
+    await expect(this.modelList.first()).toBeVisible({ timeout: TIMEOUTS.STANDARD });
+  }
+
   get modelSearchInput(): Locator {
     return this.page.getByRole('searchbox', { name: 'Filter catalog models' });
   }
