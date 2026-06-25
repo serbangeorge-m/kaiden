@@ -6,13 +6,22 @@ set -euo pipefail
 
 SECRETS_FILE="${SECRETS_FILE:-secrets.txt}"
 
+escape_sed() {
+  printf '%s' "$1" | sed 's/[&/\]/\\&/g'
+}
+
 build_sed_script() {
-  # Dynamic: if secrets.txt exists, extract key names and redact KEY=value and "KEY":"value" patterns
   if [ -f "$SECRETS_FILE" ]; then
-    while IFS='=' read -r key _; do
+    while IFS='=' read -r key value; do
       [ -z "$key" ] && continue
+      # Key-name patterns: KEY=value and "KEY":"value"
       echo "s/\"${key}\":\"[^\"]*\"/\"${key}\":\"***REDACTED***\"/g"
       echo "s/${key}=[^[:space:]\"&;,]+/${key}=***REDACTED***/g"
+      # Value-based: redact the raw secret anywhere it appears
+      if [ -n "$value" ]; then
+        escaped=$(escape_sed "$value")
+        echo "s/${escaped}/***REDACTED***/g"
+      fi
     done < "$SECRETS_FILE"
   fi
 
