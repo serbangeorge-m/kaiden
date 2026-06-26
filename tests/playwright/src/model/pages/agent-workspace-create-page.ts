@@ -17,6 +17,7 @@
  ***********************************************************************/
 
 import { expect, type Locator, type Page } from '@playwright/test';
+
 import {
   type CodingAgent,
   type FileAccessLevel,
@@ -24,7 +25,7 @@ import {
   WIZARD_STEP,
   WIZARD_STEPS,
   type WizardStep,
-} from 'src/model/core/types';
+} from '/@/model/core/types';
 
 import { BasePage } from './base-page';
 

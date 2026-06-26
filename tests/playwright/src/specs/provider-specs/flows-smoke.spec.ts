@@ -16,10 +16,9 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { TIMEOUTS } from 'src/model/core/types';
-
-import { expect, test } from '../../fixtures/provider-fixtures';
-import { waitForNavigationReady } from '../../utils/app-ready';
+import { expect, test } from '/@/fixtures/provider-fixtures';
+import { TIMEOUTS } from '/@/model/core/types';
+import { waitForNavigationReady } from '/@/utils/app-ready';
 
 const flowName = 'custom-flow-smoke-test';
 const flowNameFromContentRegion = 'custom-flow-content-region-test';

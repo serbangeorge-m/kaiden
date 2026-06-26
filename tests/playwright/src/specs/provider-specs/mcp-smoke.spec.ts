@@ -15,9 +15,9 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
-import { expect, test } from '../../fixtures/provider-fixtures';
-import { MCP_SERVERS } from '../../model/core/types';
-import { waitForNavigationReady } from '../../utils/app-ready';
+import { expect, test } from '/@/fixtures/provider-fixtures';
+import { MCP_SERVERS } from '/@/model/core/types';
+import { waitForNavigationReady } from '/@/utils/app-ready';
 
 const MCP_REGISTRY_EXAMPLE = 'MCP Registry example';
 const MCP_REGISTRY_URL = 'https://registry.modelcontextprotocol.io';

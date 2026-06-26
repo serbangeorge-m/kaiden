@@ -23,19 +23,19 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { _electron as electron, type ElectronApplication, type Page, test as base } from '@playwright/test';
-import { TIMEOUTS } from 'src/model/core/types';
-import { NavigationBar } from 'src/model/navigation/navigation';
-import { AgentWorkspacesPage } from 'src/model/pages/agent-workspaces-page';
-import { ChatPage } from 'src/model/pages/chat-page';
-import { ExtensionsPage } from 'src/model/pages/extensions-page';
-import { FlowsPage } from 'src/model/pages/flows-page';
-import { KnowledgePage } from 'src/model/pages/knowledge-page';
-import { McpPage } from 'src/model/pages/mcp-page';
-import { SettingsPage } from 'src/model/pages/settings-page';
-import { SkillsPage } from 'src/model/pages/skills-page';
 
-import { waitForAppReady } from '../utils/app-ready';
-import { saveTestArtifacts } from '../utils/test-artifacts';
+import { TIMEOUTS } from '/@/model/core/types';
+import { NavigationBar } from '/@/model/navigation/navigation';
+import { AgentWorkspacesPage } from '/@/model/pages/agent-workspaces-page';
+import { ChatPage } from '/@/model/pages/chat-page';
+import { ExtensionsPage } from '/@/model/pages/extensions-page';
+import { FlowsPage } from '/@/model/pages/flows-page';
+import { KnowledgePage } from '/@/model/pages/knowledge-page';
+import { McpPage } from '/@/model/pages/mcp-page';
+import { SettingsPage } from '/@/model/pages/settings-page';
+import { SkillsPage } from '/@/model/pages/skills-page';
+import { waitForAppReady } from '/@/utils/app-ready';
+import { saveTestArtifacts } from '/@/utils/test-artifacts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

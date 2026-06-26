@@ -18,8 +18,9 @@
 
 import { expect, type Locator, type Page } from '@playwright/test';
 
-import type { ResourceId } from '../core/types';
-import { PROVIDERS, TIMEOUTS } from '../core/types';
+import type { ResourceId } from '/@/model/core/types';
+import { PROVIDERS, TIMEOUTS } from '/@/model/core/types';
+
 import { BasePage } from './base-page';
 import { SettingsCliPage } from './settings-cli-tab-page';
 import { SettingsPreferencesPage } from './settings-preferences-tab-page';

@@ -17,8 +17,9 @@
  ***********************************************************************/
 
 import { expect, type Locator, type Page } from '@playwright/test';
-import type { ProxyConfigurationOption } from 'src/model/core/types';
-import { proxyConfigurations } from 'src/model/core/types';
+
+import type { ProxyConfigurationOption } from '/@/model/core/types';
+import { proxyConfigurations } from '/@/model/core/types';
 
 import { BasePage } from './base-page';
 

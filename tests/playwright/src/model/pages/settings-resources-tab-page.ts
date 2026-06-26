@@ -17,7 +17,8 @@
  ***********************************************************************/
 
 import { expect, type Locator, type Page } from '@playwright/test';
-import { type ConnectionType, featuredResources, resources, TIMEOUTS } from 'src/model/core/types';
+
+import { type ConnectionType, featuredResources, resources, TIMEOUTS } from '/@/model/core/types';
 
 import { BasePage } from './base-page';
 import { SettingsCreateClaudePage } from './settings-create-claude-page';

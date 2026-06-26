@@ -19,6 +19,7 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { expect, workerTest as test } from '/@/fixtures/electron-app';
 import {
   CODING_AGENT,
   CODING_AGENTS,
@@ -27,10 +28,8 @@ import {
   MCP_SERVERS,
   WIZARD_STEP,
   WIZARD_STEPS,
-} from 'src/model/core/types';
-
-import { expect, workerTest as test } from '../fixtures/electron-app';
-import { waitForNavigationReady } from '../utils/app-ready';
+} from '/@/model/core/types';
+import { waitForNavigationReady } from '/@/utils/app-ready';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEST_SKILL = {

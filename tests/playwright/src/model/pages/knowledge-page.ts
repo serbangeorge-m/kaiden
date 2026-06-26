@@ -17,7 +17,8 @@
  ***********************************************************************/
 
 import { expect, type Locator, type Page } from '@playwright/test';
-import { handleDialogIfPresent } from 'src/utils/app-ready';
+
+import { handleDialogIfPresent } from '/@/utils/app-ready';
 
 import { BaseTablePage } from './base-table-page';
 import { KnowledgeCreatePage } from './knowledge-create-page';

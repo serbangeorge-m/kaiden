@@ -15,10 +15,9 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
-import { BADGE_TEXT, builtInExtensions } from 'src/model/core/types';
-
-import { expect, workerTest as test } from '../fixtures/electron-app';
-import { waitForNavigationReady } from '../utils/app-ready';
+import { expect, workerTest as test } from '/@/fixtures/electron-app';
+import { BADGE_TEXT, builtInExtensions } from '/@/model/core/types';
+import { waitForNavigationReady } from '/@/utils/app-ready';
 
 test.describe('Extensions page navigation', { tag: '@smoke' }, () => {
   test.beforeEach(async ({ page, navigationBar }) => {

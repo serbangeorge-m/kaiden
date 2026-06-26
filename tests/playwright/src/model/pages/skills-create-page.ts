@@ -17,8 +17,9 @@
  ***********************************************************************/
 
 import { type ElectronApplication, expect, type Locator, type Page } from '@playwright/test';
-import { TIMEOUTS } from 'src/model/core/types';
-import { withMockedFileDialog } from 'src/utils/app-ready';
+
+import { TIMEOUTS } from '/@/model/core/types';
+import { withMockedFileDialog } from '/@/utils/app-ready';
 
 import { BasePage } from './base-page';
 

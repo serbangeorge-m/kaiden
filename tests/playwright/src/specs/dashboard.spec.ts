@@ -15,10 +15,9 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
-import { TIMEOUTS } from 'src/model/core/types';
-import { waitForNavigationReady } from 'src/utils/app-ready';
-
-import { expect, workerTest as test } from '../fixtures/electron-app';
+import { expect, workerTest as test } from '/@/fixtures/electron-app';
+import { TIMEOUTS } from '/@/model/core/types';
+import { waitForNavigationReady } from '/@/utils/app-ready';
 
 test.describe
   .serial('App start', { tag: '@smoke' }, () => {

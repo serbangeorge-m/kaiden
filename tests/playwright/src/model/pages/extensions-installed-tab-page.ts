@@ -18,8 +18,9 @@
 
 import type { Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-import type { ExtensionLocator } from 'src/model/core/types';
-import { BadgeType, builtInExtensions, Button, ExtensionStatus, State } from 'src/model/core/types';
+
+import type { ExtensionLocator } from '/@/model/core/types';
+import { BadgeType, builtInExtensions, Button, ExtensionStatus, State } from '/@/model/core/types';
 
 import { BasePage } from './base-page';
 

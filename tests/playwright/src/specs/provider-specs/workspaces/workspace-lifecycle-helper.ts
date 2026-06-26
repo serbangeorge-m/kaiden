@@ -21,6 +21,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type { Expect } from '@playwright/test';
+
+import type { test as providerTest } from '/@/fixtures/provider-fixtures';
 import {
   type CodingAgent,
   PROVIDERS,
@@ -28,11 +30,9 @@ import {
   TIMEOUTS,
   WIZARD_STEP,
   WORKSPACE_STATUS,
-} from 'src/model/core/types';
-import type { AgentWorkspaceCreatePage } from 'src/model/pages/agent-workspace-create-page';
-
-import type { test as providerTest } from '../../../fixtures/provider-fixtures';
-import { waitForNavigationReady } from '../../../utils/app-ready';
+} from '/@/model/core/types';
+import type { AgentWorkspaceCreatePage } from '/@/model/pages/agent-workspace-create-page';
+import { waitForNavigationReady } from '/@/utils/app-ready';
 
 export interface WorkspaceLifecycleConfig {
   testIdPrefix: string;

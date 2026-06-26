@@ -19,8 +19,9 @@
 /** biome-ignore-all lint/correctness/noEmptyPattern: Playwright fixture pattern requires empty object when no dependencies are needed */
 import { expect } from '@playwright/test';
 
-import { MCP_SERVERS, type MCPServerId, PROVIDERS, type ResourceId, TIMEOUTS } from '../model/core/types';
-import { NavigationBar } from '../model/navigation/navigation';
+import { MCP_SERVERS, type MCPServerId, PROVIDERS, type ResourceId, TIMEOUTS } from '/@/model/core/types';
+import { NavigationBar } from '/@/model/navigation/navigation';
+
 import { type ElectronFixtures, type WorkerElectronFixtures, workerTest as base } from './electron-app';
 
 interface WorkerFixtures extends WorkerElectronFixtures {

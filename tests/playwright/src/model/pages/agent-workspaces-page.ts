@@ -17,7 +17,8 @@
  ***********************************************************************/
 
 import { expect, type Locator, type Page } from '@playwright/test';
-import { TIMEOUTS } from 'src/model/core/types';
+
+import { TIMEOUTS } from '/@/model/core/types';
 
 import { AgentWorkspaceCreatePage } from './agent-workspace-create-page';
 import { AgentWorkspaceDetailsPage } from './agent-workspace-details-page';

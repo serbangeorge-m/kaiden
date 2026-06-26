@@ -17,9 +17,10 @@
  ***********************************************************************/
 
 import { expect, type Locator, type Page } from '@playwright/test';
-import { clearAllToasts, handleDialogIfPresent } from 'src/utils/app-ready';
 
-import { TIMEOUTS } from '../core/types';
+import { TIMEOUTS } from '/@/model/core/types';
+import { clearAllToasts, handleDialogIfPresent } from '/@/utils/app-ready';
+
 import { BasePage } from './base-page';
 import { FlowsCreatePage } from './flows-create-page';
 

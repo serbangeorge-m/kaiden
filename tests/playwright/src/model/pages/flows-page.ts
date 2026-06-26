@@ -17,8 +17,9 @@
  ***********************************************************************/
 
 import { expect, type Locator, type Page } from '@playwright/test';
-import type { FlowParameters } from 'src/model/core/types';
-import { handleDialogIfPresent } from 'src/utils/app-ready';
+
+import type { FlowParameters } from '/@/model/core/types';
+import { handleDialogIfPresent } from '/@/utils/app-ready';
 
 import { BaseTablePage } from './base-table-page';
 import { FlowsCreatePage } from './flows-create-page';

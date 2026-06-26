@@ -15,10 +15,9 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
-import { MCP_SERVERS, TIMEOUTS } from 'src/model/core/types';
-
-import { expect, test } from '../../fixtures/provider-fixtures';
-import { waitForNavigationReady } from '../../utils/app-ready';
+import { expect, test } from '/@/fixtures/provider-fixtures';
+import { MCP_SERVERS, TIMEOUTS } from '/@/model/core/types';
+import { waitForNavigationReady } from '/@/utils/app-ready';
 
 const hasGithubToken = !!process.env[MCP_SERVERS.github.envVarName];
 

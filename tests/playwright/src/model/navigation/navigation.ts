@@ -18,15 +18,15 @@
 
 import { expect, type Locator, type Page } from '@playwright/test';
 
-import { AgentWorkspacesPage } from '../pages/agent-workspaces-page';
-import type { BasePage } from '../pages/base-page';
-import { ChatPage } from '../pages/chat-page';
-import { ExtensionsPage } from '../pages/extensions-page';
-import { FlowsPage } from '../pages/flows-page';
-import { KnowledgePage } from '../pages/knowledge-page';
-import { McpPage } from '../pages/mcp-page';
-import { SettingsPage } from '../pages/settings-page';
-import { SkillsPage } from '../pages/skills-page';
+import { AgentWorkspacesPage } from '/@/model/pages/agent-workspaces-page';
+import type { BasePage } from '/@/model/pages/base-page';
+import { ChatPage } from '/@/model/pages/chat-page';
+import { ExtensionsPage } from '/@/model/pages/extensions-page';
+import { FlowsPage } from '/@/model/pages/flows-page';
+import { KnowledgePage } from '/@/model/pages/knowledge-page';
+import { McpPage } from '/@/model/pages/mcp-page';
+import { SettingsPage } from '/@/model/pages/settings-page';
+import { SkillsPage } from '/@/model/pages/skills-page';
 
 export class NavigationBar {
   readonly page: Page;

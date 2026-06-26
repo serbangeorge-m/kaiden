@@ -18,7 +18,8 @@
 
 import { expect, type Locator, type Page } from '@playwright/test';
 
-import { TIMEOUTS } from '../core/types';
+import { TIMEOUTS } from '/@/model/core/types';
+
 import { BasePage } from './base-page';
 
 export class SettingsCreateMilvusPage extends BasePage {

@@ -17,7 +17,8 @@
  ***********************************************************************/
 
 import { type ElectronApplication, expect, type Locator, type Page } from '@playwright/test';
-import { handleDialogIfPresent, withMockedFileDialog } from 'src/utils/app-ready';
+
+import { handleDialogIfPresent, withMockedFileDialog } from '/@/utils/app-ready';
 
 import { BasePage } from './base-page';
 import { KnowledgePage } from './knowledge-page';

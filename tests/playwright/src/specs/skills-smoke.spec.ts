@@ -20,9 +20,9 @@ import { globSync, readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { expect, workerTest as test } from '../fixtures/electron-app';
-import type { SkillsCreatePage } from '../model/pages/skills-create-page';
-import { waitForNavigationReady } from '../utils/app-ready';
+import { expect, workerTest as test } from '/@/fixtures/electron-app';
+import type { SkillsCreatePage } from '/@/model/pages/skills-create-page';
+import { waitForNavigationReady } from '/@/utils/app-ready';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SKILL_FILES = globSync(resolve(__dirname, '../../../../.agents/skills/*/SKILL.md'));

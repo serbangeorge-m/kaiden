@@ -19,9 +19,9 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test } from '../../../fixtures/provider-fixtures';
-import { TIMEOUTS } from '../../../model/core/types';
-import { waitForNavigationReady } from '../../../utils/app-ready';
+import { expect, test } from '/@/fixtures/provider-fixtures';
+import { TIMEOUTS } from '/@/model/core/types';
+import { waitForNavigationReady } from '/@/utils/app-ready';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEST_FILE_PATH = resolve(__dirname, '../../../../resources/test-doc.pdf');

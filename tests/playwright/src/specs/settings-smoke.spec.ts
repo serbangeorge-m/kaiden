@@ -15,15 +15,14 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
+import { expect, workerTest as test } from '/@/fixtures/electron-app';
 import {
   featuredResources,
   preferenceOptions,
   proxyConfigurations,
   resourcesWithCreateButton,
-} from 'src/model/core/types';
-
-import { expect, workerTest as test } from '../fixtures/electron-app';
-import { waitForNavigationReady } from '../utils/app-ready';
+} from '/@/model/core/types';
+import { waitForNavigationReady } from '/@/utils/app-ready';
 
 test.describe('Settings page navigation', { tag: '@smoke' }, () => {
   test.beforeEach(async ({ page, navigationBar }) => {

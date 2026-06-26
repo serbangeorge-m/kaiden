@@ -18,8 +18,9 @@
 
 import type { Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-import type { ExtensionLocator } from 'src/model/core/types';
-import { builtInExtensions } from 'src/model/core/types';
+
+import type { ExtensionLocator } from '/@/model/core/types';
+import { builtInExtensions } from '/@/model/core/types';
 
 import { BasePage } from './base-page';
 import { ExtensionsInstalledPage } from './extensions-installed-tab-page';

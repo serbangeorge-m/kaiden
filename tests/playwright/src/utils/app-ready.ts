@@ -17,7 +17,8 @@
  ***********************************************************************/
 
 import { type ElectronApplication, expect, type Locator, type Page } from '@playwright/test';
-import { type DialogOptions, SELECTORS, TIMEOUTS } from 'src/model/core/types';
+
+import { type DialogOptions, SELECTORS, TIMEOUTS } from '/@/model/core/types';
 
 export async function waitForAppReady(page: Page, timeout = TIMEOUTS.DEFAULT): Promise<void> {
   try {

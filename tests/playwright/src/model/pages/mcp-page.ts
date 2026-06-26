@@ -18,7 +18,8 @@
 
 import { expect, type Locator, type Page } from '@playwright/test';
 
-import { TIMEOUTS } from '../core/types';
+import { TIMEOUTS } from '/@/model/core/types';
+
 import { BasePage } from './base-page';
 import { McpEditRegistriesTabPage } from './mcp-edit-registries-tab-page';
 import { McpInstallTabPage } from './mcp-install-tab-page';

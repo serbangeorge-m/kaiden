@@ -16,9 +16,9 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { CODING_AGENT } from 'src/model/core/types';
+import { expect, test } from '/@/fixtures/provider-fixtures';
+import { CODING_AGENT } from '/@/model/core/types';
 
-import { expect, test } from '../../../fixtures/provider-fixtures';
 import { registerWorkspaceLifecycleTests } from './workspace-lifecycle-helper';
 
 test.describe

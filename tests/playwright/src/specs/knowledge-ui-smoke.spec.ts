@@ -16,8 +16,8 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { expect, test } from '../fixtures/provider-fixtures';
-import { waitForNavigationReady } from '../utils/app-ready';
+import { expect, test } from '/@/fixtures/provider-fixtures';
+import { waitForNavigationReady } from '/@/utils/app-ready';
 
 test.describe('Knowledge Databases page - empty state', { tag: '@smoke' }, () => {
   test.beforeEach(async ({ page }) => {

@@ -17,7 +17,8 @@
  ***********************************************************************/
 
 import { expect, type Locator, type Page } from '@playwright/test';
-import { PreferenceOption } from 'src/model/core/types';
+
+import { PreferenceOption } from '/@/model/core/types';
 
 import { BasePage } from './base-page';
 
