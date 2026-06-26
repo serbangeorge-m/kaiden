@@ -22,12 +22,14 @@ import { BaseTablePage } from './base-table-page';
 
 export class McpInstallTabPage extends BaseTablePage {
   readonly noMcpServersAvailableHeading: Locator;
+  readonly catalogRefreshingIndicator: Locator;
   readonly passwordInput: Locator;
   readonly connectButton: Locator;
 
   constructor(page: Page) {
     super(page, 'mcpServer');
     this.noMcpServersAvailableHeading = this.table.getByRole('heading', { name: 'No MCP servers available' });
+    this.catalogRefreshingIndicator = this.content.getByText(/Loading catalog|Refreshing catalog/);
     this.passwordInput = this.page.getByLabel('password');
     this.connectButton = this.page.getByRole('button', { name: 'Connect' });
   }
@@ -36,13 +38,20 @@ export class McpInstallTabPage extends BaseTablePage {
     await expect(this.table).toBeVisible();
   }
 
+  async waitForCatalogRefresh(timeout: number): Promise<void> {
+    await this.catalogRefreshingIndicator.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
+    await expect(this.catalogRefreshingIndicator).not.toBeVisible({ timeout });
+  }
+
   async verifyServerCountIncreased(initialServerCount: number, timeout = 10_000): Promise<void> {
+    await this.waitForCatalogRefresh(timeout);
     await expect
       .poll(async () => await this.countRowsFromTable(), { timeout: timeout })
       .toBeGreaterThan(initialServerCount);
   }
 
   async verifyServerCountIsRestored(initialServerCount: number, timeout = 10_000): Promise<void> {
+    await this.waitForCatalogRefresh(timeout);
     await expect.poll(async () => await this.countRowsFromTable(), { timeout: timeout }).toBe(initialServerCount);
   }
 

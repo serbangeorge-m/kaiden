@@ -15,20 +15,50 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
+import { createServer, type Server } from 'node:http';
+
 import { expect, test } from '/@/fixtures/provider-fixtures';
 import { MCP_SERVERS } from '/@/model/core/types';
 import { waitForNavigationReady } from '/@/utils/app-ready';
 
 const MCP_REGISTRY_EXAMPLE = 'MCP Registry example';
-const MCP_REGISTRY_URL = 'https://registry.modelcontextprotocol.io';
-const SERVER_LIST_UPDATE_TIMEOUT = 180_000;
+const SERVER_LIST_UPDATE_TIMEOUT = 60_000;
 const SERVER_CONNECTION_TIMEOUT = 10_000;
+
+const MOCK_REGISTRY_RESPONSE = JSON.stringify({
+  servers: [
+    { server: { name: 'io.test/mock-server-alpha', description: 'Mock MCP server A', version: '1.0.0' }, _meta: {} },
+    { server: { name: 'io.test/mock-server-beta', description: 'Mock MCP server B', version: '1.0.0' }, _meta: {} },
+  ],
+  metadata: { count: 2 },
+});
 
 test.use({
   mcpServers: process.env[MCP_SERVERS.github.envVarName] ? ['github'] : [],
 });
 
-test.describe('MCP Registry Management', () => {
+test.describe('MCP Registry Management', { tag: '@smoke' }, () => {
+  let server: Server;
+  let mockRegistryUrl: string;
+
+  test.beforeAll(async () => {
+    server = createServer((_, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(MOCK_REGISTRY_RESPONSE);
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+    const addr = server.address() as { port: number };
+    mockRegistryUrl = `http://127.0.0.1:${addr.port}`;
+  });
+
+  test.afterAll(async () => {
+    await new Promise<void>(resolve => server?.close(() => resolve()) ?? resolve());
+  });
+
   test.beforeEach(async ({ page, navigationBar }) => {
     await waitForNavigationReady(page);
     await navigationBar.navigateToMCPPage();
@@ -43,15 +73,15 @@ test.describe('MCP Registry Management', () => {
     const initialServerCount = await installTab.countRowsFromTable();
 
     await mcpPage.openEditRegistriesTab();
-    await editRegistriesTab.addNewRegistry(MCP_REGISTRY_URL);
-    await editRegistriesTab.ensureRowExists(MCP_REGISTRY_URL);
+    await editRegistriesTab.addNewRegistry(mockRegistryUrl);
+    await editRegistriesTab.ensureRowExists(mockRegistryUrl);
 
     await mcpPage.openInstallTab();
     await installTab.verifyServerCountIncreased(initialServerCount, SERVER_LIST_UPDATE_TIMEOUT);
 
     await mcpPage.openEditRegistriesTab();
-    await editRegistriesTab.removeRegistry(MCP_REGISTRY_URL);
-    await editRegistriesTab.ensureRowDoesNotExist(MCP_REGISTRY_URL);
+    await editRegistriesTab.removeRegistry(mockRegistryUrl);
+    await editRegistriesTab.ensureRowDoesNotExist(mockRegistryUrl);
 
     await mcpPage.openInstallTab();
     await installTab.verifyServerCountIsRestored(initialServerCount, SERVER_LIST_UPDATE_TIMEOUT);
