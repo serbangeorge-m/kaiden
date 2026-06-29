@@ -79,17 +79,27 @@ export class OpenshellCli {
   }
 
   private extractCliError(err: unknown): string {
-    if (err instanceof Error && 'stdout' in err && typeof (err as RunError).stdout === 'string') {
-      try {
-        const parsed: unknown = JSON.parse((err as RunError).stdout);
-        if (typeof parsed === 'object' && parsed !== null && 'error' in parsed) {
-          const errorField = (parsed as { error: unknown }).error;
-          if (typeof errorField === 'string' && errorField) {
-            return errorField;
+    if (err instanceof Error && 'stdout' in err) {
+      const runErr = err as RunError;
+      if (typeof runErr.stdout === 'string' && runErr.stdout.trim()) {
+        try {
+          const parsed: unknown = JSON.parse(runErr.stdout);
+          if (typeof parsed === 'object' && parsed !== null && 'error' in parsed) {
+            const errorField = (parsed as { error: unknown }).error;
+            if (typeof errorField === 'string' && errorField) {
+              return errorField;
+            }
           }
+        } catch {
+          // not JSON – fall through
         }
-      } catch {
-        // not JSON – fall through
+      }
+
+      const stderr = typeof runErr.stderr === 'string' ? runErr.stderr.trim() : '';
+      const stdout = typeof runErr.stdout === 'string' ? runErr.stdout.trim() : '';
+      const cliOutput = stderr || stdout;
+      if (cliOutput) {
+        return cliOutput;
       }
     }
     return err instanceof Error ? err.message : String(err);
@@ -317,10 +327,8 @@ export class OpenshellCli {
       throw new Error('credentials must not be empty');
     }
     const args = ['provider', 'create', '--name', options.name, '--type', options.type];
-    const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(options.credentials)) {
-      env[key] = value;
-      args.push('--credential', key);
+      args.push('--credential', `${key}=${value}`);
     }
     if (options.flags) {
       for (const flag of options.flags) {
@@ -332,7 +340,7 @@ export class OpenshellCli {
         args.push('--config', `${key}=${value}`);
       }
     }
-    await this.runCli(args, { env });
+    await this.runCli(args, { redact: true });
   }
 
   // ── helpers ───────────────────────────────────────────────────────
@@ -354,6 +362,10 @@ export class OpenshellCli {
     const sensitiveFlags = new Set(['--credential', '--config', '--env']);
     return args.map((arg, i) => {
       if (i > 0 && sensitiveFlags.has(args[i - 1]!)) {
+        const separatorIndex = arg.indexOf('=');
+        if (separatorIndex > 0) {
+          return `${arg.slice(0, separatorIndex + 1)}***`;
+        }
         return '***';
       }
       return arg;

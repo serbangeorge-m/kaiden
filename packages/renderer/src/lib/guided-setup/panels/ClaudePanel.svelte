@@ -33,6 +33,28 @@ let existingConnection = $derived(
 );
 let alreadyConnected = $derived(!!existingConnection);
 
+async function storeOpenshellProvider(trimmedKey: string): Promise<boolean> {
+  try {
+    await window.createSecret({
+      name: secretType,
+      type: secretType,
+      value: {
+        credentials: {
+          ANTHROPIC_API_KEY: trimmedKey,
+        },
+      },
+    });
+    return true;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('already exists')) {
+      return true;
+    }
+    console.warn('Failed to store openshell provider during onboarding:', msg);
+    return false;
+  }
+}
+
 async function validate(): Promise<boolean> {
   if (alreadyConnected) {
     return true;
@@ -45,23 +67,10 @@ async function validate(): Promise<boolean> {
     return false;
   }
 
-  if (!apiKey.trim()) {
+  const trimmedKey = apiKey.trim();
+  if (!trimmedKey) {
     errorMessage = 'Please enter your Anthropic API key.';
     return false;
-  }
-
-  try {
-    await window.createSecret({
-      name: secretType,
-      type: secretType,
-      value: apiKey.trim(),
-    });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!msg.includes('already exists')) {
-      errorMessage = `Failed to store secret: ${msg}`;
-      return false;
-    }
   }
 
   try {
@@ -69,7 +78,7 @@ async function validate(): Promise<boolean> {
     const noop = (): void => {};
     await window.createInferenceProviderConnection(
       claudeProvider.internalId,
-      { 'claude.factory.apiKey': apiKey.trim() },
+      { 'claude.factory.apiKey': trimmedKey },
       loggerKey,
       noop,
       undefined,
@@ -78,16 +87,20 @@ async function validate(): Promise<boolean> {
 
     await fetchProviders();
 
+    const secretStored = await storeOpenshellProvider(trimmedKey);
+
     if (onboarding) {
       const agentSettings = onboarding.workspaceSetting.defaultAgentSettings?.[onboarding.agent] ?? {};
       onboarding.workspaceSetting.defaultAgentSettings ??= {};
       onboarding.workspaceSetting.defaultAgentSettings[onboarding.agent] = agentSettings;
-      agentSettings.workspaceConfiguration ??= {};
-      agentSettings.workspaceConfiguration.secrets ??= [];
-      agentSettings.workspaceConfiguration.secrets = agentSettings.workspaceConfiguration.secrets.filter(
-        secret => secret !== secretType,
-      );
-      agentSettings.workspaceConfiguration.secrets.push(secretType);
+      if (secretStored) {
+        agentSettings.workspaceConfiguration ??= {};
+        agentSettings.workspaceConfiguration.secrets ??= [];
+        agentSettings.workspaceConfiguration.secrets = agentSettings.workspaceConfiguration.secrets.filter(
+          secret => secret !== secretType,
+        );
+        agentSettings.workspaceConfiguration.secrets.push(secretType);
+      }
     }
     return true;
   } catch (err: unknown) {

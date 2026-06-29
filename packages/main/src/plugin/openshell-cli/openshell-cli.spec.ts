@@ -851,12 +851,8 @@ describe('createProvider', () => {
 
     expect(exec.exec).toHaveBeenCalledWith(
       OPENSHELL_CLI_PATH,
-      ['provider', 'create', '--name', 'my-openai', '--type', 'openai', '--credential', 'apiKey'],
-      {
-        env: {
-          apiKey: 'sk-123',
-        },
-      },
+      ['provider', 'create', '--name', 'my-openai', '--type', 'openai', '--credential', 'apiKey=sk-123'],
+      undefined,
     );
   });
 
@@ -880,16 +876,11 @@ describe('createProvider', () => {
         '--type',
         'custom',
         '--credential',
-        'apiKey',
+        'apiKey=key-1',
         '--credential',
-        'secret',
+        'secret=sec-2',
       ],
-      {
-        env: {
-          apiKey: 'key-1',
-          secret: 'sec-2',
-        },
-      },
+      undefined,
     );
   });
 
@@ -914,17 +905,13 @@ describe('createProvider', () => {
         '--type',
         'openai',
         '--credential',
-        'apiKey',
+        'apiKey=sk-123',
         '--config',
         'model=gpt-4',
         '--config',
         'temperature=0.7',
       ],
-      {
-        env: {
-          apiKey: 'sk-123',
-        },
-      },
+      undefined,
     );
   });
 
@@ -961,14 +948,10 @@ describe('createProvider', () => {
         '--type',
         'google-vertex-ai',
         '--credential',
-        'GOOGLE_APPLICATION_CREDENTIALS',
+        'GOOGLE_APPLICATION_CREDENTIALS=/path/to/creds.json',
         '--from-gcloud-adc',
       ],
-      {
-        env: {
-          GOOGLE_APPLICATION_CREDENTIALS: '/path/to/creds.json',
-        },
-      },
+      undefined,
     );
   });
 
@@ -986,7 +969,7 @@ describe('createProvider', () => {
     expect(exec.exec).toHaveBeenCalledWith(
       OPENSHELL_CLI_PATH,
       ['provider', 'create', '--name', 'my-vertex', '--type', 'google-vertex-ai', '--from-gcloud-adc'],
-      { env: {} },
+      undefined,
     );
   });
 
@@ -1003,7 +986,7 @@ describe('createProvider', () => {
 
     const loggedMessage = logSpy.mock.calls[0]?.[0] as string;
     expect(loggedMessage).not.toContain('sk-secret-123');
-    expect(loggedMessage).toContain('gpt-4');
+    expect(loggedMessage).toContain('apiKey=***');
   });
 
   test('rejects when CLI fails', async () => {

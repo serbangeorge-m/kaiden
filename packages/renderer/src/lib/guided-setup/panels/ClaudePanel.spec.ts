@@ -157,7 +157,11 @@ describe('beforeAdvance callback', () => {
     expect(window.createSecret).toHaveBeenCalledWith({
       name: 'anthropic',
       type: 'anthropic',
-      value: 'sk-ant-test-key',
+      value: {
+        credentials: {
+          ANTHROPIC_API_KEY: 'sk-ant-test-key',
+        },
+      },
     });
     expect(window.createInferenceProviderConnection).toHaveBeenCalledWith(
       'claude-internal-1',
@@ -202,8 +206,12 @@ describe('beforeAdvance callback', () => {
     expect(screen.getByText('invalid apiKey')).toBeInTheDocument();
   });
 
-  test('returns false and shows error when secret creation fails', async () => {
-    vi.mocked(window.createSecret).mockRejectedValue(new Error('vault locked'));
+  test('continues when secret creation fails but inference connection succeeds', async () => {
+    vi.mocked(window.createSecret).mockRejectedValue(new Error('gateway unavailable'));
+    vi.mocked(fetchProviders).mockImplementation(async () => {
+      stubClaudeProvider({ withModels: true });
+      return [] as ProviderInfo[];
+    });
 
     renderPanel();
 
@@ -213,8 +221,8 @@ describe('beforeAdvance callback', () => {
 
     const result = await onboarding.beforeAdvance!();
 
-    expect(result).toBe(false);
-    expect(screen.getByText(/vault locked/)).toBeInTheDocument();
+    expect(result).toBe(true);
+    expect(onboarding.workspaceSetting.defaultAgentSettings?.claude?.workspaceConfiguration?.secrets).toBeUndefined();
   });
 });
 
