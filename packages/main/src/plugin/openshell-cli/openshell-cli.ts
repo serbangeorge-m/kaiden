@@ -105,6 +105,24 @@ export class OpenshellCli {
     return err instanceof Error ? err.message : String(err);
   }
 
+  private redactSensitiveText(text: string, args: string[]): string {
+    const sensitiveFlags = new Set(['--credential', '--config', '--env']);
+    let redacted = text;
+    for (let i = 0; i < args.length; i++) {
+      if (i === 0 || !sensitiveFlags.has(args[i - 1]!)) {
+        continue;
+      }
+      const separatorIndex = args[i]!.indexOf('=');
+      if (separatorIndex > 0) {
+        const value = args[i]!.slice(separatorIndex + 1);
+        if (value) {
+          redacted = redacted.replaceAll(value, '***');
+        }
+      }
+    }
+    return redacted;
+  }
+
   async getVersion(): Promise<string> {
     const cliPath = this.getCliPath();
     try {
@@ -352,7 +370,7 @@ export class OpenshellCli {
     try {
       await this.exec.exec(cliPath, args, options?.env ? { env: options.env } : undefined);
     } catch (err: unknown) {
-      const detail = this.extractCliError(err);
+      const detail = this.redactSensitiveText(this.extractCliError(err), args);
       console.error(`openshell failed: ${cliPath} ${displayArgs.join(' ')} — ${detail}`);
       throw new Error(detail);
     }

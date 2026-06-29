@@ -48,7 +48,8 @@ async function storeOpenshellProvider(trimmedKey: string): Promise<boolean> {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('already exists')) {
-      return true;
+      console.warn('Openshell provider already exists with unknown format, skipping workspace secret registration');
+      return false;
     }
     console.warn('Failed to store openshell provider during onboarding:', msg);
     return false;

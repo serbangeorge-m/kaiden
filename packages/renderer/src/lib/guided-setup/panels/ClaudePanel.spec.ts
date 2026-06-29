@@ -189,6 +189,7 @@ describe('beforeAdvance callback', () => {
     const result = await onboarding.beforeAdvance!();
 
     expect(result).toBe(true);
+    expect(onboarding.workspaceSetting.defaultAgentSettings?.claude?.workspaceConfiguration?.secrets).toBeUndefined();
   });
 
   test('returns false and shows error when inference connection fails', async () => {

@@ -1002,4 +1002,22 @@ describe('createProvider', () => {
       }),
     ).rejects.toThrow('provider type not supported');
   });
+
+  test('redacts credential values from thrown CLI errors', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.mocked(exec.exec).mockRejectedValue(
+      mockRunError({
+        stderr: 'failed to create provider with credential apiKey=sk-secret-123',
+      }),
+    );
+
+    await expect(
+      openshellCli.createProvider({
+        name: 'my-openai',
+        type: 'openai',
+        credentials: { apiKey: 'sk-secret-123' },
+      }),
+    ).rejects.toThrow('failed to create provider with credential apiKey=***');
+  });
 });
