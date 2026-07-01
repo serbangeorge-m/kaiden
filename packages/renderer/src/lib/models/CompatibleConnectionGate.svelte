@@ -11,7 +11,11 @@ import { providerInfos } from '/@/stores/providers';
 import type { CatalogModelInfo } from '/@api/model-registry-info';
 import type { ProviderInfo } from '/@api/provider-info';
 
-import { getCompatibleModels, getCompatibleUnconfiguredConnections } from './compatible-connections';
+import {
+  getCompatibleModels,
+  getCompatibleUnconfiguredConnections,
+  pickDefaultUnconfiguredConnection,
+} from './compatible-connections';
 import ModelSelectionTable from './ModelSelectionTable.svelte';
 
 interface Props {
@@ -33,11 +37,20 @@ let unconfiguredConnections = $derived(
 let selectedProviderInternalId: string | undefined = $state(undefined);
 
 let autoSelectedProvider = $derived.by((): string | undefined => {
-  if (unconfiguredConnections.length === 1) return unconfiguredConnections[0]!.providerInternalId;
-  return undefined;
+  return pickDefaultUnconfiguredConnection(unconfiguredConnections)?.providerInternalId;
 });
 
 let activeProviderInternalId = $derived(selectedProviderInternalId ?? autoSelectedProvider);
+
+$effect(() => {
+  const connections = unconfiguredConnections;
+  if (
+    selectedProviderInternalId &&
+    !connections.some(connection => connection.providerInternalId === selectedProviderInternalId)
+  ) {
+    selectedProviderInternalId = undefined;
+  }
+});
 
 let activeProviderInfo: ProviderInfo | undefined = $derived(
   activeProviderInternalId ? $providerInfos.find(p => p.internalId === activeProviderInternalId) : undefined,
@@ -68,12 +81,16 @@ function selectProvider(internalId: string): void {
     <div class="flex flex-wrap gap-3 justify-center" data-testid="provider-picker">
       {#each unconfiguredConnections as connection (connection.providerId)}
         {@const isActive = activeProviderInternalId === connection.providerInternalId}
-        <Button
-          type={isActive ? 'primary' : 'secondary'}
-          aria-label="Select {connection.providerName}"
-          onclick={selectProvider.bind(undefined, connection.providerInternalId)}>
-          {connection.creationDisplayName || connection.providerName}
-        </Button>
+        <div
+          data-testid="provider-option-{connection.providerId}"
+          data-selected={isActive ? 'true' : 'false'}>
+          <Button
+            type={isActive ? 'primary' : 'secondary'}
+            aria-label="Select {connection.creationDisplayName || connection.providerName}"
+            onclick={selectProvider.bind(undefined, connection.providerInternalId)}>
+            {connection.creationDisplayName || connection.providerName}
+          </Button>
+        </div>
       {/each}
     </div>
 

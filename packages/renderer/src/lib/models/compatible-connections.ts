@@ -44,3 +44,13 @@ export function getCompatibleModels(
   const typeNames = new Set(supportedModelTypes.map(t => t.name));
   return models.filter(m => m.llmMetadata?.name !== undefined && typeNames.has(m.llmMetadata.name));
 }
+
+/** Prefer direct Anthropic (Claude) over other compatible providers such as Vertex AI. */
+export function pickDefaultUnconfiguredConnection(
+  connections: readonly InferenceConnectionSummary[],
+): InferenceConnectionSummary | undefined {
+  if (connections.length === 0) return undefined;
+  if (connections.length === 1) return connections[0];
+  const anthropicDirect = connections.find(c => c.llmMetadata?.name === 'anthropic' || c.providerId === 'claude');
+  return anthropicDirect ?? connections[0];
+}

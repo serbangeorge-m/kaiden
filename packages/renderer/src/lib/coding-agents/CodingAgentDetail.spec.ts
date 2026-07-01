@@ -148,12 +148,24 @@ test('shows model selection table when compatible models exist', () => {
   expect(screen.getByText('llama3.2:3b')).toBeInTheDocument();
 });
 
-test('shows provider picker when multiple unconfigured connections', () => {
+test('shows provider picker and auto-selects Claude when multiple unconfigured connections', () => {
   vi.mocked(inferenceConnectionSummariesStore).inferenceConnectionSummariesData = writable<
     Readonly<InferenceConnectionSummary[]>
   >([
     {
-      providerName: 'Anthropic',
+      providerName: 'Vertex AI',
+      providerId: 'vertex-ai',
+      providerInternalId: 'vertex-ai-internal',
+      connectionId: '',
+      connectionType: 'cloud',
+      llmMetadata: { name: 'vertexai' },
+      status: 'not-configured',
+      modelCount: 0,
+      creationDisplayName: 'Vertex AI',
+      configurable: true,
+    },
+    {
+      providerName: 'Claude',
       providerId: 'claude',
       providerInternalId: 'claude-internal',
       connectionId: '',
@@ -161,37 +173,40 @@ test('shows provider picker when multiple unconfigured connections', () => {
       llmMetadata: { name: 'anthropic' },
       status: 'not-configured',
       modelCount: 0,
-      creationDisplayName: 'Create Anthropic connection',
-      configurable: true,
-    },
-    {
-      providerName: 'Ollama',
-      providerId: 'ollama',
-      providerInternalId: 'ollama-internal',
-      connectionId: '',
-      connectionType: 'local',
-      llmMetadata: { name: 'ollama' },
-      status: 'not-configured',
-      modelCount: 0,
-      creationDisplayName: 'Create Ollama connection',
+      creationDisplayName: 'Claude',
       configurable: true,
     },
   ]);
   vi.mocked(providersStore).providerInfos = writable<ProviderInfo[]>([
     {
+      id: 'vertex-ai',
+      name: 'Vertex AI',
+      internalId: 'vertex-ai-internal',
+      status: 'not-started',
+    } as unknown as ProviderInfo,
+    {
       id: 'claude',
-      name: 'Anthropic',
+      name: 'Claude',
       internalId: 'claude-internal',
       status: 'not-started',
     } as unknown as ProviderInfo,
-    { id: 'ollama', name: 'Ollama', internalId: 'ollama-internal', status: 'not-started' } as unknown as ProviderInfo,
   ]);
 
-  render(CodingAgentDetail, { props: { agentInfo: mockAgentInfo } });
+  render(CodingAgentDetail, {
+    props: {
+      agentInfo: {
+        ...mockAgentInfo,
+        id: 'claude',
+        name: 'Claude Code',
+        supportedModelTypes: [{ name: 'anthropic' }, { name: 'vertexai' }],
+      },
+    },
+  });
 
   expect(screen.getByTestId('provider-picker')).toBeInTheDocument();
-  expect(screen.getByLabelText('Select Anthropic')).toBeInTheDocument();
-  expect(screen.getByLabelText('Select Ollama')).toBeInTheDocument();
+  expect(screen.getByTestId('provider-option-claude')).toHaveAttribute('data-selected', 'true');
+  expect(screen.getByTestId('provider-option-vertex-ai')).toHaveAttribute('data-selected', 'false');
+  expect(screen.getByTestId('inline-connection-form')).toBeInTheDocument();
 });
 
 test('save button disabled when no changes', () => {

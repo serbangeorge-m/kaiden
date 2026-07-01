@@ -136,6 +136,28 @@ export class AgentWorkspaceCreatePage extends BasePage {
     await expect(card).toHaveAttribute('aria-selected', 'true');
   }
 
+  async expectAgentSelected(agent: CodingAgent): Promise<void> {
+    await expect(this.getAgentCard(agent)).toHaveAttribute('aria-selected', 'true');
+  }
+
+  async getSelectedModelLabel(): Promise<string> {
+    const selected = this.page.getByTestId('selected-model');
+    if (await selected.isVisible()) {
+      const text = await selected.textContent();
+      return text?.replace(/^Selected:\s*/, '').trim() ?? '';
+    }
+    const checked = this.page.locator('input[name="modelSelection"]:checked');
+    await expect(checked).toBeVisible();
+    const ariaLabel = await checked.getAttribute('aria-label');
+    return ariaLabel?.replace(/^Use\s+/, '') ?? '';
+  }
+
+  async expectModelSelected(modelLabel: string): Promise<void> {
+    const row = this.page.getByTestId(`model-row-${modelLabel}`);
+    await expect(row.locator('input[name="modelSelection"]')).toBeChecked();
+    await expect(this.page.getByTestId('selected-model')).toHaveText(`Selected: ${modelLabel}`);
+  }
+
   async expandCustomize(): Promise<void> {
     await expect(this.customizeExpandable).toBeVisible();
     await this.customizeExpandable.click();

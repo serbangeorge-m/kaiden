@@ -62,7 +62,7 @@ const mockAgentInfos: AgentInfo[] = [
     command: 'claude',
     tags: ['Cloud'],
     destinationSkillsFolder: '/home/test/.claude/skills',
-    supportedModelTypes: [{ name: 'anthropic' }],
+    supportedModelTypes: [{ name: 'anthropic' }, { name: 'vertexai' }],
   },
   {
     id: 'goose',
@@ -77,14 +77,14 @@ const mockAgentInfos: AgentInfo[] = [
 
 const mockAnthropicProviderNoModels: ProviderInfo = {
   id: 'claude',
-  name: 'Anthropic',
+  name: 'Claude',
   internalId: 'claude-internal',
   status: 'started',
   inferenceConnections: [],
   inferenceProviderConnectionCreation: true,
   inferenceProviderConnectionCreationTypes: ['cloud'],
   inferenceProviderConnectionCreationLLMMetadata: { name: 'anthropic' },
-  inferenceProviderConnectionCreationDisplayName: 'Anthropic',
+  inferenceProviderConnectionCreationDisplayName: 'Claude',
 } as unknown as ProviderInfo;
 
 const mockOllamaProvider: ProviderInfo = {
@@ -364,5 +364,36 @@ test('allows selecting an agent that exists in the shared agent store', async ()
 
   await waitFor(() => {
     expect(onboarding.agent).toBe('custom-agent');
+  });
+});
+
+test('auto-selects Claude provider when Claude Code has Vertex AI and Claude options', async () => {
+  setProviders([
+    {
+      id: 'vertex-ai',
+      name: 'Vertex AI',
+      internalId: 'vertex-ai-internal',
+      status: 'started',
+      inferenceConnections: [],
+      inferenceProviderConnectionCreation: true,
+      inferenceProviderConnectionCreationTypes: ['cloud'],
+      inferenceProviderConnectionCreationLLMMetadata: { name: 'vertexai' },
+      inferenceProviderConnectionCreationDisplayName: 'Vertex AI',
+    } as unknown as ProviderInfo,
+    mockAnthropicProviderNoModels,
+  ]);
+
+  const onboarding: OnboardingState = {
+    agent: 'claude',
+    workspaceSetting: {},
+  };
+
+  renderPage(onboarding);
+
+  await waitFor(() => {
+    expect(screen.getByTestId('provider-picker')).toBeInTheDocument();
+    expect(screen.getByTestId('provider-option-claude')).toHaveAttribute('data-selected', 'true');
+    expect(screen.getByTestId('provider-option-vertex-ai')).toHaveAttribute('data-selected', 'false');
+    expect(screen.getByTestId('inline-connection-form')).toBeInTheDocument();
   });
 });

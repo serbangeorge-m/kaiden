@@ -20,10 +20,14 @@ import { describe, expect, test } from 'vitest';
 
 import type { CatalogModelInfo, InferenceConnectionSummary } from '/@api/model-registry-info';
 
-import { getCompatibleModels, getCompatibleUnconfiguredConnections } from './compatible-connections';
+import {
+  getCompatibleModels,
+  getCompatibleUnconfiguredConnections,
+  pickDefaultUnconfiguredConnection,
+} from './compatible-connections';
 
 const anthropicSummary: InferenceConnectionSummary = {
-  providerName: 'Anthropic',
+  providerName: 'Claude',
   providerId: 'claude',
   providerInternalId: 'claude-internal',
   connectionId: '',
@@ -31,7 +35,20 @@ const anthropicSummary: InferenceConnectionSummary = {
   llmMetadata: { name: 'anthropic' },
   status: 'not-configured',
   modelCount: 0,
-  creationDisplayName: 'Create Anthropic connection',
+  creationDisplayName: 'Claude',
+  configurable: true,
+};
+
+const vertexSummary: InferenceConnectionSummary = {
+  providerName: 'Vertex AI',
+  providerId: 'vertex-ai',
+  providerInternalId: 'vertex-ai-internal',
+  connectionId: '',
+  connectionType: 'cloud',
+  llmMetadata: { name: 'vertexai' },
+  status: 'not-configured',
+  modelCount: 0,
+  creationDisplayName: 'Vertex AI',
   configurable: true,
 };
 
@@ -163,5 +180,24 @@ describe('getCompatibleModels', () => {
     const noMetadata = { ...anthropicModel, llmMetadata: undefined };
     const result = getCompatibleModels([noMetadata], [{ name: 'anthropic' }]);
     expect(result).toEqual([]);
+  });
+});
+
+describe('pickDefaultUnconfiguredConnection', () => {
+  test('returns undefined for an empty list', () => {
+    expect(pickDefaultUnconfiguredConnection([])).toBeUndefined();
+  });
+
+  test('returns the only connection when one is available', () => {
+    expect(pickDefaultUnconfiguredConnection([ollamaSummary])).toBe(ollamaSummary);
+  });
+
+  test('prefers direct Anthropic Claude over Vertex AI', () => {
+    expect(pickDefaultUnconfiguredConnection([vertexSummary, anthropicSummary])).toBe(anthropicSummary);
+    expect(pickDefaultUnconfiguredConnection([anthropicSummary, vertexSummary])).toBe(anthropicSummary);
+  });
+
+  test('falls back to the first connection when no Anthropic direct provider exists', () => {
+    expect(pickDefaultUnconfiguredConnection([ollamaSummary, vertexSummary])).toBe(ollamaSummary);
   });
 });
