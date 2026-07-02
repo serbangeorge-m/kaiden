@@ -40,7 +40,6 @@ if (import.meta.env.VITE_CI && process.platform === 'linux') {
 }
 
 let extensionLoader: ExtensionLoader | undefined;
-let pluginSystem: PluginSystem | undefined;
 
 // Main startup
 const podmanDesktopMain = new Main(app);
@@ -75,10 +74,6 @@ app.once('before-quit', event => {
     .catch((error: unknown) => {
       console.log('Error stopping extensions', error);
     })
-    .then(() => pluginSystem?.disposeMainServices())
-    .catch((error: unknown) => {
-      console.error('Error stopping main services', error);
-    })
     .finally(() => {
       stoppedExtensions.val = true;
       app.quit();
@@ -108,7 +103,7 @@ app.whenReady().then(
     const onDidCreatedConfigurationRegistry: Event<ConfigurationRegistry> = _onDidCreatedConfigurationRegistry.event;
 
     // Start extensions
-    pluginSystem = new PluginSystem(trayMenu, podmanDesktopMain.mainWindowDeferred);
+    const pluginSystem = new PluginSystem(trayMenu, podmanDesktopMain.mainWindowDeferred);
 
     onDidCreatedConfigurationRegistry(async (configurationRegistry: ConfigurationRegistry) => {
       // If we've manually set the tray icon color, update the tray icon. This can only be done

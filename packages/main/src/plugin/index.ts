@@ -288,7 +288,6 @@ export class PluginSystem {
   // The yet to be init ExtensionLoader
   private extensionLoader!: ExtensionLoader;
   private validExtList!: ExtensionInfo[];
-  private container: Container | undefined;
 
   constructor(
     private trayMenu: TrayMenu,
@@ -297,19 +296,6 @@ export class PluginSystem {
     app.on('before-quit', () => {
       this.isQuitting = true;
     });
-  }
-
-  async disposeMainServices(): Promise<void> {
-    if (!this.container) {
-      return;
-    }
-
-    try {
-      const openshellGateway = this.container.get<OpenshellGateway>(OpenshellGateway);
-      await openshellGateway.stop();
-    } catch (error) {
-      console.error('Error stopping openshell gateway', error);
-    }
   }
 
   getWebContentsSender(): WebContents {
@@ -528,7 +514,6 @@ export class PluginSystem {
     const apiSender = this.getApiSender(this.getWebContentsSender());
     const webContentsSender = this.getWebContentsSender();
     const container = new Container();
-    this.container = container;
     container.bind<ApiSenderType>(ApiSenderType).toConstantValue(apiSender);
     container.bind<IPCHandle>(IPCHandle).toConstantValue(this.ipcHandle);
     container.bind<IPCMainOn>(IPCMainOn).toConstantValue(this.ipcMainOn);

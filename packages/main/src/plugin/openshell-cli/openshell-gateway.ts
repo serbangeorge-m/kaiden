@@ -213,8 +213,6 @@ export class OpenshellGateway implements Disposable {
       });
     });
 
-    proc.stdout?.destroy();
-    proc.stderr?.destroy();
     this.#gatewayProcess = undefined;
   }
 
