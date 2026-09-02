@@ -20,6 +20,7 @@ import '@testing-library/jest-dom/vitest';
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { router } from 'tinro';
 import { beforeEach, expect, test, vi } from 'vitest';
 
 import { notificationQueue } from '/@/stores/notifications';
@@ -29,6 +30,8 @@ import type { NotificationCard } from '/@api/notification';
 import type { GatewayInfo, GatewaySandboxes } from '/@api/openshell-gateway-info';
 
 import AgentWorkspaceList from './AgentWorkspaceList.svelte';
+
+vi.mock(import('tinro'));
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -222,4 +225,36 @@ test('Expect "All" option shows all workspaces', async () => {
 
   expect(screen.getByText('local-workspace')).toBeInTheDocument();
   expect(screen.getByText('remote-workspace')).toBeInTheDocument();
+});
+
+test('Expect clicking workspace name navigates to overview page', async () => {
+  const workspaces: GatewaySandboxes[] = [
+    {
+      gateway: { name: 'local', endpoint: 'http://localhost:18080' },
+      sandboxes: [{ id: 'ws-1', name: 'test-workspace', phase: 'Ready', created_at: Date.now().toString() }],
+    },
+  ];
+  openshellSandboxes.set(workspaces);
+
+  render(AgentWorkspaceList);
+
+  await fireEvent.click(screen.getByText('test-workspace'));
+
+  expect(router.goto).toHaveBeenCalledWith('/agent-workspaces/ws-1/overview');
+});
+
+test('Expect clicking workspace name does not navigate when phase is Deleting', async () => {
+  const workspaces: GatewaySandboxes[] = [
+    {
+      gateway: { name: 'local', endpoint: 'http://localhost:18080' },
+      sandboxes: [{ id: 'ws-1', name: 'deleting-workspace', phase: 'Deleting', created_at: Date.now().toString() }],
+    },
+  ];
+  openshellSandboxes.set(workspaces);
+
+  render(AgentWorkspaceList);
+
+  await fireEvent.click(screen.getByText('deleting-workspace'));
+
+  expect(router.goto).not.toHaveBeenCalled();
 });

@@ -1,0 +1,117 @@
+diff --git a/dist/table/Table.svelte b/dist/table/Table.svelte
+index 4db8e26e32e02fcb0ec7417a3d64c0024354d88f..b2977888e7029982986437be22db7acef49c279d 100644
+--- a/dist/table/Table.svelte
++++ b/dist/table/Table.svelte
+@@ -366,6 +366,61 @@ async function resetColumns(): Promise<void> {
+     columnOrdering.clear();
+   }
+ }
++
++const INTERACTIVE_SELECTOR =
++  'button, a, input, select, textarea, label, [role="button"], [role="menuitem"], [role="checkbox"], [role="switch"]';
++
++function isRowClickable(object: T): boolean {
++  return !!row.info.onClick && (row.info.clickable?.(object) ?? true);
++}
++
++function shouldIgnoreRowClick(rowElement: HTMLElement, event: MouseEvent): boolean {
++  const target = event.target instanceof Element
++    ? event.target
++    : event.target instanceof Text
++      ? event.target.parentElement ?? undefined
++      : undefined;
++
++  if (!target || target === rowElement) {
++    return false;
++  }
++
++  if (target.closest(INTERACTIVE_SELECTOR) !== null) {
++    return true;
++  }
++
++  const cell = target.closest('[role="cell"]');
++  if (!cell || !rowElement.contains(cell)) {
++    return true;
++  }
++
++  const cells = Array.from(rowElement.querySelectorAll(':scope > [role="cell"]'));
++  const cellIndex = cells.indexOf(cell as HTMLElement);
++  if (cellIndex < 0) {
++    return true;
++  }
++
++  const columnIndex = cellIndex - (row.info.selectable ? 2 : 1);
++  if (columnIndex < 0) {
++    return false;
++  }
++
++  if (columnIndex >= visibleColumns.length) {
++    return true;
++  }
++
++  return visibleColumns[columnIndex].info.excludeFromRowClick === true;
++}
++
++function handleRowClick(object: T, event: MouseEvent): void {
++  if (!isRowClickable(object) || !row.info.onClick) {
++    return;
++  }
++  if (shouldIgnoreRowClick(event.currentTarget as HTMLElement, event)) {
++    return;
++  }
++  row.info.onClick(object, event);
++}
+ </script>
+ 
+ <div
+@@ -446,14 +501,18 @@ async function resetColumns(): Promise<void> {
+       {@const children = row.info.children?.(object) ?? []}
+       {@const itemKey = key(object)}
+       <div class="min-h-[48px] h-fit bg-[var(--pd-content-card-bg)] rounded-lg mb-2 border border-[var(--pd-content-table-border)]">
++        <!-- svelte-ignore a11y-click-events-have-key-events -->
++        <!-- svelte-ignore a11y-no-static-element-interactions -->
+         <div
+           class="grid grid-table gap-x-0.5 min-h-[48px] hover:bg-[var(--pd-content-card-hover-bg)]"
+           class:rounded-t-lg={!collapsed.includes(itemKey) &&
+             children.length > 0}
+           class:rounded-lg={collapsed.includes(itemKey) ||
+             children.length === 0}
++          class:cursor-pointer={isRowClickable(object)}
+           role="row"
+-          aria-label={label(object)}>
++          aria-label={label(object)}
++          on:click={handleRowClick.bind(undefined, object)}>
+           <div class="whitespace-nowrap place-self-center" role="cell">
+             {#if children.length > 0}
+               <button
+diff --git a/dist/table/table.d.ts b/dist/table/table.d.ts
+index 1489f70b84f8a6f253bf34030d3be771d8c853da..dba0a01c35378e7356ca6ce187f0a31b3cf9dc59 100644
+--- a/dist/table/table.d.ts
++++ b/dist/table/table.d.ts
+@@ -77,6 +77,10 @@ export interface ColumnInformation<Type, RenderType = Type> {
+      * Defaults to 'false'.
+      */
+     readonly overflow?: boolean;
++    /**
++     * When true, clicks inside this column do not trigger the row onClick handler.
++     */
++    readonly excludeFromRowClick?: boolean;
+ }
+ /**
+  * A table Column.
+@@ -102,6 +106,15 @@ export interface RowInformation<Type, ChildType> {
+      * Returns an array of child objects of a given row.
+      */
+     readonly children?: (object: Type) => ChildType[];
++    /**
++     * Handler invoked when a clickable row is clicked.
++     */
++    readonly onClick?: (object: Type, event: Event) => void;
++    /**
++     * Returns true if the row should respond to clicks.
++     * Defaults to true when onClick is set.
++     */
++    readonly clickable?: (object: Type) => boolean;
+ }
+ /**
+  * A table row.

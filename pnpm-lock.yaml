@@ -28,6 +28,9 @@ overrides:
   node-gyp: ^11
 
 patchedDependencies:
+  '@podman-desktop/ui-svelte@1.25.1':
+    hash: 331ae2e242f21c93bebeb228943280fa22c6931758934455c3668da04fa5482a
+    path: patches/@podman-desktop__ui-svelte@1.25.1.patch
   dmg-builder:
     hash: b1937a6dd1c958dfabaa5fd32cb2ede7972c4d6143ccb1e7fe5963e19e34cc3d
     path: patches/dmg-builder.patch
@@ -943,7 +946,7 @@ importers:
         version: 0.539.0(svelte@5.47.0)
       '@podman-desktop/ui-svelte':
         specifier: ^1.25.0
-        version: 1.25.1(svelte-fa@4.0.4(svelte@5.47.0))(svelte@5.47.0)
+        version: 1.25.1(patch_hash=331ae2e242f21c93bebeb228943280fa22c6931758934455c3668da04fa5482a)(svelte-fa@4.0.4(svelte@5.47.0))(svelte@5.47.0)
       '@sejohnson/svelte-themes':
         specifier: ^0.0.6
         version: 0.0.6(svelte@5.47.0)
@@ -9224,7 +9227,7 @@ snapshots:
     dependencies:
       playwright: 1.57.0
 
-  '@podman-desktop/ui-svelte@1.25.1(svelte-fa@4.0.4(svelte@5.47.0))(svelte@5.47.0)':
+  '@podman-desktop/ui-svelte@1.25.1(patch_hash=331ae2e242f21c93bebeb228943280fa22c6931758934455c3668da04fa5482a)(svelte-fa@4.0.4(svelte@5.47.0))(svelte@5.47.0)':
     dependencies:
       '@floating-ui/dom': 1.7.6
       '@fortawesome/fontawesome-free': 7.2.0

@@ -11,6 +11,7 @@ import {
   TableDurationColumn,
   TableRow,
 } from '@podman-desktop/ui-svelte';
+import { router } from 'tinro';
 
 import NotificationsBox from '/@/lib/dashboard/NotificationsBox.svelte';
 import GatewayFilterDropdown from '/@/lib/gateways/GatewayFilterDropdown.svelte';
@@ -57,7 +58,12 @@ const filteredSandboxes: SandboxSelectable[] = $derived(
   $filteredOpenshellSandboxes.map(sandbox => ({ ...sandbox, selected: false })),
 );
 
-const sandboxRow = new TableRow<SandboxSelectable>({});
+const sandboxRow = new TableRow<SandboxSelectable>({
+  onClick: (sandbox): void => {
+    router.goto(`/agent-workspaces/${encodeURIComponent(sandbox.id)}/overview`);
+  },
+  clickable: (sandbox): boolean => sandbox.phase !== 'Deleting',
+});
 
 const sandboxNameColumn = new TableColumn<SandboxSelectable>('Workspace', {
   width: '3fr',
@@ -94,6 +100,7 @@ const sandboxActionsColumn = new TableColumn<SandboxSelectable>('', {
   width: '90px',
   renderer: SandboxActions,
   overflow: true,
+  excludeFromRowClick: true,
 });
 
 const sandboxColumns = [
