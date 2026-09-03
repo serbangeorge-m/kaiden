@@ -120,6 +120,13 @@ export class AgentWorkspaceCreatePage extends BasePage {
   }
 
   async continueToStep(step: WizardStep): Promise<void> {
+    const enabled = await this.continueButton.isEnabled({ timeout: 5_000 }).catch(() => false);
+    if (!enabled) {
+      const banner = this.page.getByText('No usable OpenShell gateways available');
+      if (await banner.isVisible()) {
+        throw new Error('Continue button disabled: no usable OpenShell gateways available');
+      }
+    }
     await expect(this.continueButton).toBeEnabled();
     await this.continueButton.click();
     await this.expectStepActive(step);
