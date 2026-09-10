@@ -26,6 +26,8 @@ import { _electron as electron, type ElectronApplication, type Page, test as bas
 
 import { TIMEOUTS } from '/@/model/core/types';
 import { NavigationBar } from '/@/model/navigation/navigation';
+import { AgentSessionDetailPage } from '/@/model/pages/agent-session-detail-page';
+import { AgentSessionsPage } from '/@/model/pages/agent-sessions-page';
 import { AgentWorkspacesPage } from '/@/model/pages/agent-workspaces-page';
 import { ChatPage } from '/@/model/pages/chat-page';
 import { ExtensionsPage } from '/@/model/pages/extensions-page';
@@ -56,6 +58,8 @@ export interface ElectronFixtures {
   extensionsPage: ExtensionsPage;
   chatPage: ChatPage;
   agentWorkspacesPage: AgentWorkspacesPage;
+  agentSessionsPage: AgentSessionsPage;
+  agentSessionDetailPage: AgentSessionDetailPage;
 }
 
 export interface WorkerElectronFixtures {
@@ -144,6 +148,16 @@ export const test = base.extend<ElectronFixtures>({
   agentWorkspacesPage: async ({ page }, use): Promise<void> => {
     const agentWorkspacesPage = new AgentWorkspacesPage(page);
     await use(agentWorkspacesPage);
+  },
+
+  agentSessionsPage: async ({ page }, use): Promise<void> => {
+    const agentSessionsPage = new AgentSessionsPage(page);
+    await use(agentSessionsPage);
+  },
+
+  agentSessionDetailPage: async ({ page }, use): Promise<void> => {
+    const agentSessionDetailPage = new AgentSessionDetailPage(page);
+    await use(agentSessionDetailPage);
   },
 });
 

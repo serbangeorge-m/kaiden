@@ -170,6 +170,10 @@ export class AgentWorkspacesPage extends BaseTablePage {
     if (!row) {
       return;
     }
+    const removeButton = row.getByRole('button', { name: 'Remove workspace' });
+    if (await removeButton.isDisabled()) {
+      return;
+    }
     await this.removeWorkspace(name);
   }
 

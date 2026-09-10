@@ -19,6 +19,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
 import { builtInExtensions, ExtensionStatus } from '/@/model/core/types';
+import { AgentSessionsPage } from '/@/model/pages/agent-sessions-page';
 import { AgentWorkspacesPage } from '/@/model/pages/agent-workspaces-page';
 import type { BasePage } from '/@/model/pages/base-page';
 import { ChatPage } from '/@/model/pages/chat-page';
@@ -38,6 +39,7 @@ export class NavigationBar {
   readonly extensionsLink: Locator;
   readonly workspacesLink: Locator;
   readonly settingsLink: Locator;
+  readonly agentsLink: Locator;
   private readonly links: Locator[];
 
   constructor(page: Page) {
@@ -50,12 +52,14 @@ export class NavigationBar {
     this.extensionsLink = this.navigationLocator.getByRole('link', { name: 'Extensions', exact: true });
     this.workspacesLink = this.navigationLocator.getByRole('link', { name: 'Workspaces', exact: true });
     this.settingsLink = this.navigationLocator.getByRole('link', { name: 'Settings', exact: true });
+    this.agentsLink = this.navigationLocator.getByRole('link', { name: 'Agents', exact: true });
     this.links = [
       this.chatLink,
       this.mcpLink,
       this.skillsLink,
       this.knowledgesLink,
       this.extensionsLink,
+      this.agentsLink,
       this.workspacesLink,
       this.settingsLink,
     ];
@@ -115,6 +119,10 @@ export class NavigationBar {
 
   async navigateToWorkspacesPage(): Promise<AgentWorkspacesPage> {
     return this.navigateTo(this.workspacesLink, AgentWorkspacesPage);
+  }
+
+  async navigateToAgentsPage(): Promise<AgentSessionsPage> {
+    return this.navigateTo(this.agentsLink, AgentSessionsPage);
   }
 
   async navigateToSettingsPage(): Promise<SettingsPage> {
