@@ -96,13 +96,21 @@ export class GuidedSetupPage extends BasePage {
     return this.dialog.getByTestId('provider-picker');
   }
 
+  get modelRows(): Locator {
+    return this.dialog.locator('[data-testid^="model-row-"]');
+  }
+
+  get createConnectionPrompt(): Locator {
+    return this.dialog.getByTestId('no-models-create-connection');
+  }
+
   getModelRow(modelLabel: string): Locator {
     return this.dialog.getByTestId(`model-row-${modelLabel}`);
   }
 
   async waitForModelCatalog(timeout: number = TIMEOUTS.DEFAULT): Promise<void> {
     await expect
-      .poll(async () => await this.dialog.locator('[data-testid^="model-row-"]').count(), {
+      .poll(async () => await this.modelRows.count(), {
         timeout,
         intervals: [500, 1_000, 2_000],
         message: 'Model catalog did not populate in guided setup',
@@ -111,7 +119,7 @@ export class GuidedSetupPage extends BasePage {
   }
 
   async getModelLabels(): Promise<string[]> {
-    const rows = this.dialog.locator('[data-testid^="model-row-"]');
+    const rows = this.modelRows;
     const count = await rows.count();
     const labels: string[] = [];
     for (let i = 0; i < count; i++) {
@@ -141,8 +149,14 @@ export class GuidedSetupPage extends BasePage {
   async ensureModelCatalogFor(agent: CodingAgent, preferredProviderId?: WorkspaceInferenceProviderId): Promise<void> {
     await this.selectAgent(agent);
     const setup = resolveAgentModelConnectionFor(agent, preferredProviderId);
-    if (setup && (await this.dialog.getByTestId('no-models-create-connection').isVisible())) {
-      await this.createInlineConnection(setup);
+    if (setup) {
+      // Wait for the connection gate to settle — inference summaries load async.
+      await expect(this.modelRows.first().or(this.createConnectionPrompt)).toBeVisible({
+        timeout: TIMEOUTS.STANDARD,
+      });
+      if (await this.createConnectionPrompt.isVisible()) {
+        await this.createInlineConnection(setup);
+      }
     }
     await this.waitForModelCatalog();
   }
