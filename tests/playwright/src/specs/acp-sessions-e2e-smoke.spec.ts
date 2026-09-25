@@ -16,18 +16,37 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { expect, workerTest as test } from '/@/fixtures/electron-app';
 import { CODING_AGENT, TIMEOUTS, WIZARD_STEP, WORKSPACE_STATUS } from '/@/model/core/types';
 import { waitForNavigationReady } from '/@/utils/app-ready';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const RESOURCES = resolve(__dirname, '../../../resources');
+
+const ATTACHMENT_CASES = [
+  { file: 'test-doc.md', label: 'Markdown' },
+  { file: 'test-config.json', label: 'JSON' },
+  { file: 'test-manifest.yaml', label: 'YAML Kubernetes manifest' },
+  { file: 'test-script.py', label: 'Python script' },
+] as const;
+
 const WORKSPACE_NAME = 'acp-smoke-pr';
 const MODEL_RESPONSE_TIMEOUT = 120_000;
 
+const RUNTIME = process.env.OLLAMA_ENABLED
+  ? { search: 'ollama', name: 'Ollama' }
+  : process.env.RAMALAMA_ENABLED
+    ? { search: 'ramalama', name: 'RamaLama' }
+    : undefined;
+
 test.skip(
   !!process.env.GITHUB_ACTIONS && process.platform !== 'linux',
-  'ACP session e2e requires Podman + Ollama, only available on Linux GitHub Actions runners',
+  'ACP session e2e requires Podman + a local model runtime, only available on Linux GitHub Actions runners',
 );
-test.skip(!process.env.OLLAMA_ENABLED, 'OLLAMA_ENABLED not set — Ollama is required for ACP session tests');
+test.skip(!RUNTIME, 'Neither OLLAMA_ENABLED nor RAMALAMA_ENABLED is set — a local model runtime is required');
 
 test.describe
   .serial('ACP session round-trip', { tag: '@smoke' }, () => {
@@ -37,7 +56,10 @@ test.describe
       await waitForNavigationReady(page);
     });
 
-    test('[ACP-E2E-01] Provision a workspace with OpenCode+Ollama', async ({ navigationBar, agentWorkspacesPage }) => {
+    test(`[ACP-E2E-01] Provision a workspace with OpenCode+${RUNTIME?.name}`, async ({
+      navigationBar,
+      agentWorkspacesPage,
+    }) => {
       await navigationBar.ensureExtensionsRunning();
       await navigationBar.navigateToWorkspacesPage();
       await agentWorkspacesPage.removeWorkspaceIfPresent(WORKSPACE_NAME);
@@ -48,7 +70,7 @@ test.describe
       await createPage.continueToStep(WIZARD_STEP.AGENT_MODEL);
       await createPage.selectAgent(CODING_AGENT.OPENCODE);
       await createPage.waitForModelCatalog();
-      await createPage.searchAndSelectByRuntime('ollama', 'Ollama');
+      await createPage.searchAndSelectByRuntime(RUNTIME!.search, RUNTIME!.name);
       await createPage.continueToStep(WIZARD_STEP.TOOLS_SECRETS);
       await createPage.continueToStep(WIZARD_STEP.FILE_SYSTEM);
       await createPage.continueToStep(WIZARD_STEP.NETWORKING);
@@ -85,14 +107,37 @@ test.describe
       await expect(agentSessionDetailPage.getFlowText(/pong/i)).toBeVisible();
     });
 
-    test('[ACP-E2E-03] Rename a session via the sidebar', async ({ navigationBar, agentSessionsPage }) => {
+    for (const [i, { file, label }] of ATTACHMENT_CASES.entries()) {
+      test(`[ACP-E2E-03.${i + 1}] Attach ${label} file and receive a response`, async ({
+        navigationBar,
+        agentSessionsPage,
+        agentSessionDetailPage,
+        electronApp,
+      }) => {
+        await navigationBar.navigateToAgentsPage();
+        await agentSessionsPage.sidebar.openSession(sessionLabel);
+        await agentSessionDetailPage.waitForLoad();
+
+        const filePath = resolve(RESOURCES, file);
+        await agentSessionDetailPage.attachFile(filePath, electronApp);
+        await expect(agentSessionDetailPage.getAttachmentChip(file)).toBeVisible();
+
+        await agentSessionDetailPage.installTurnObserver();
+        await agentSessionDetailPage.sendFollowUp('What is this file about? Reply in one sentence.');
+        await agentSessionDetailPage.markTurnSent();
+
+        await agentSessionDetailPage.waitForTurnCompletion(MODEL_RESPONSE_TIMEOUT);
+      });
+    }
+
+    test('[ACP-E2E-04] Rename a session via the sidebar', async ({ navigationBar, agentSessionsPage }) => {
       await navigationBar.navigateToAgentsPage();
       await agentSessionsPage.sidebar.renameSession(sessionLabel, 'smoke-renamed');
       await expect(agentSessionsPage.sidebar.getSessionRow('smoke-renamed')).toBeVisible();
       sessionLabel = 'smoke-renamed';
     });
 
-    test('[ACP-E2E-04] Search filters sessions and clearing restores the list', async ({
+    test('[ACP-E2E-05] Search filters sessions and clearing restores the list', async ({
       navigationBar,
       agentSessionsPage,
     }) => {
@@ -107,7 +152,7 @@ test.describe
       await expect(agentSessionsPage.searchInput).toHaveValue('');
     });
 
-    test('[ACP-E2E-05] Delete the session and clean up workspace', async ({
+    test('[ACP-E2E-06] Delete the session and clean up workspace', async ({
       navigationBar,
       agentSessionsPage,
       agentWorkspacesPage,
