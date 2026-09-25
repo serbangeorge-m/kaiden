@@ -28,6 +28,7 @@ const RESOURCES = resolve(__dirname, '../../../resources');
 
 const ATTACHMENT_CASES = [
   { file: 'test-doc.md', label: 'Markdown' },
+  { file: 'test-doc.html', label: 'HTML' },
   { file: 'test-config.json', label: 'JSON' },
   { file: 'test-manifest.yaml', label: 'YAML Kubernetes manifest' },
   { file: 'test-script.py', label: 'Python script' },
@@ -49,14 +50,14 @@ test.skip(
 test.skip(!RUNTIME, 'Neither OLLAMA_ENABLED nor RAMALAMA_ENABLED is set — a local model runtime is required');
 
 test.describe
-  .serial('ACP session round-trip', { tag: '@smoke' }, () => {
+  .serial('ACP sessions - lifecycle smoke', { tag: '@smoke' }, () => {
     let sessionLabel: string;
 
     test.beforeEach(async ({ page }) => {
       await waitForNavigationReady(page);
     });
 
-    test(`[ACP-E2E-01] Provision a workspace with OpenCode+${RUNTIME?.name}`, async ({
+    test(`[ACP-SES-01] Provision a workspace with OpenCode+${RUNTIME?.name}`, async ({
       navigationBar,
       agentWorkspacesPage,
     }) => {
@@ -84,7 +85,7 @@ test.describe
       );
     });
 
-    test('[ACP-E2E-02] Create a session and receive a model response', async ({
+    test('[ACP-SES-02] Create a session and receive a model response', async ({
       navigationBar,
       agentSessionsPage,
       agentSessionDetailPage,
@@ -108,7 +109,7 @@ test.describe
     });
 
     for (const [i, { file, label }] of ATTACHMENT_CASES.entries()) {
-      test(`[ACP-E2E-03.${i + 1}] Attach ${label} file and receive a response`, async ({
+      test(`[ACP-SES-03.${i + 1}] Attach ${label} file and receive a response`, async ({
         navigationBar,
         agentSessionsPage,
         agentSessionDetailPage,
@@ -130,14 +131,14 @@ test.describe
       });
     }
 
-    test('[ACP-E2E-04] Rename a session via the sidebar', async ({ navigationBar, agentSessionsPage }) => {
+    test('[ACP-SES-04] Rename a session via the sidebar', async ({ navigationBar, agentSessionsPage }) => {
       await navigationBar.navigateToAgentsPage();
       await agentSessionsPage.sidebar.renameSession(sessionLabel, 'smoke-renamed');
       await expect(agentSessionsPage.sidebar.getSessionRow('smoke-renamed')).toBeVisible();
       sessionLabel = 'smoke-renamed';
     });
 
-    test('[ACP-E2E-05] Search filters sessions and clearing restores the list', async ({
+    test('[ACP-SES-05] Search filters sessions and clearing restores the list', async ({
       navigationBar,
       agentSessionsPage,
     }) => {
@@ -152,18 +153,28 @@ test.describe
       await expect(agentSessionsPage.searchInput).toHaveValue('');
     });
 
-    test('[ACP-E2E-06] Delete the session and clean up workspace', async ({
+    test('[ACP-SES-06] Removing the workspace marks the session read-only', async ({
       navigationBar,
-      agentSessionsPage,
       agentWorkspacesPage,
+      agentSessionsPage,
+      agentSessionDetailPage,
     }) => {
+      await navigationBar.navigateToWorkspacesPage();
+      await agentWorkspacesPage.removeWorkspaceIfPresent(WORKSPACE_NAME);
+
+      await navigationBar.navigateToAgentsPage();
+      await agentSessionsPage.sidebar.openSession(sessionLabel);
+      await agentSessionDetailPage.waitForLoad();
+
+      await expect(agentSessionDetailPage.staleSandboxBanner).toBeVisible({ timeout: TIMEOUTS.STANDARD });
+      await expect(agentSessionDetailPage.followUpTextarea).not.toBeVisible();
+    });
+
+    test('[ACP-SES-07] Delete the session', async ({ navigationBar, agentSessionsPage }) => {
       await navigationBar.navigateToAgentsPage();
       await agentSessionsPage.sidebar.deleteSession(sessionLabel);
       await expect(agentSessionsPage.sidebar.getSessionRow(sessionLabel)).toHaveCount(0, {
         timeout: TIMEOUTS.STANDARD,
       });
-
-      await navigationBar.navigateToWorkspacesPage();
-      await agentWorkspacesPage.removeWorkspaceIfPresent(WORKSPACE_NAME);
     });
   });
