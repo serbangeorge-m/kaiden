@@ -144,6 +144,17 @@ jobs:
         if: runner.os == 'Linux'
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
+      # Kaiden's local OpenShell gateway uses the VM driver on Linux, which boots each sandbox
+      # as a microVM through /dev/kvm. GitHub Ubuntu runners expose the device but not to the
+      # runner user, so sandbox creation fails with "VM process exited with status 1".
+      - name: Enable KVM
+        if: runner.os == 'Linux'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
       # OpenShell 0.0.113 fails closed unless Podman reports rootlessNetworkCmd=pasta.
       # ubuntu-24.04 images from 20260831 onward ship distro Podman 4.9.3, which omits
       # that field (helper '<missing>'), so the local gateway never becomes reachable.
