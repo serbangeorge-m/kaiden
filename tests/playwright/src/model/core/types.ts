@@ -318,6 +318,7 @@ export const WORKSPACE_STATUS = {
   STOPPED: 'stopped',
   STARTING: 'starting',
   STOPPING: 'stopping',
+  COMPLETED: 'completed',
 } as const;
 
 export const TIMEOUTS = {
