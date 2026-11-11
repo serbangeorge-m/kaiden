@@ -40,7 +40,9 @@ export class AgentWorkspaceTerminalPage extends BasePage {
   }
 
   async waitForLoad(): Promise<void> {
-    await expect(this.terminalContainer.or(this.emptyTerminalMessage)).toBeVisible({
+    // only visible matches: the Shell Terminal tab keeps a hidden "Workspace is not running" message next to
+    // its terminal, which would otherwise make this locator match twice (strict mode violation)
+    await expect(this.terminalContainer.or(this.emptyTerminalMessage).filter({ visible: true }).first()).toBeVisible({
       timeout: TIMEOUTS.WORKSPACE_READY,
     });
   }
@@ -123,13 +125,37 @@ export class AgentWorkspaceTerminalPage extends BasePage {
     return textarea;
   }
 
-  async sendPrompt(options: { prompt: string; expectedResponse?: string | RegExp; timeout?: number }): Promise<void> {
-    const { prompt, expectedResponse, timeout = TIMEOUTS.MODEL_RESPONSE } = options;
+  /**
+   * Runs a shell command (in the Shell Terminal tab) and returns the output line matching `marker`.
+   * Use a marker unique to this call, printed so the echoed command line can't match it
+   * (e.g. `printf 'W0=%s\n' ok`). Typed quickly: unlike the agent TUIs, a shell needs no per-key delay.
+   */
+  async runShellCommand(
+    command: string,
+    marker: RegExp,
+    timeout: number = TIMEOUTS.STANDARD,
+  ): Promise<RegExpExecArray> {
+    await this.sendPrompt({ prompt: command, expectedResponse: marker, timeout, keyDelay: 0 });
+    const match = marker.exec(await this.getTerminalText());
+    if (!match) {
+      throw new Error(`Shell output no longer shows ${String(marker)} after running: ${command}`);
+    }
+    return match;
+  }
+
+  async sendPrompt(options: {
+    prompt: string;
+    expectedResponse?: string | RegExp;
+    timeout?: number;
+    /** Delay between keystrokes in ms; agent TUIs need the default 50, a plain shell doesn't. */
+    keyDelay?: number;
+  }): Promise<void> {
+    const { prompt, expectedResponse, timeout = TIMEOUTS.MODEL_RESPONSE, keyDelay = 50 } = options;
 
     await this.dismissAnthropicApiKeyPromptIfVisible();
 
     const textarea = await this.focusTerminalInput();
-    await textarea.pressSequentially(prompt, { delay: 50 });
+    await textarea.pressSequentially(prompt, { delay: keyDelay });
     await textarea.press('Enter');
 
     if (expectedResponse) {

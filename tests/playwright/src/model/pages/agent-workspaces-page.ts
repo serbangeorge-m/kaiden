@@ -64,6 +64,25 @@ export class AgentWorkspacesPage extends BaseTablePage {
     await this.ensureRowExists(workspaceName, TIMEOUTS.WORKSPACE_READY);
   }
 
+  /**
+   * Waits for the "Creating workspace" task in the status bar to end. A workspace shows Running before Kaiden
+   * finishes creating it (uploads, network policy, agent start; see openkaiden/kaiden#3192), so checks of its
+   * final configuration must wait for this first.
+   */
+  async waitForCreationTask(workspaceName: string, timeout: number = TIMEOUTS.WORKSPACE_READY): Promise<void> {
+    const runningTask = this.page.getByRole('button', { name: 'Toggle Task Manager' }).getByRole('status');
+    await expect
+      .poll(
+        async () => {
+          // allTextContents() does not wait: the indicator can disappear at any moment
+          const [title = ''] = await runningTask.allTextContents();
+          return !title.includes(`Creating workspace "${workspaceName}"`) && !/tasks running/.test(title);
+        },
+        { timeout, message: `Creation task for workspace "${workspaceName}" did not finish` },
+      )
+      .toBe(true);
+  }
+
   private getStatCardValue(label: 'Active Sessions' | 'Total Sessions' | 'Configured Agents'): Locator {
     return this.content
       .locator('div.flex.flex-col')

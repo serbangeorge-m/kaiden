@@ -172,7 +172,7 @@ tests/playwright/src/specs/provider-specs/workspaces/
 
 **Sandbox mode** (`config.sandbox` set): configures filesystem and networking wizard steps, skips stat-card assertions (flaky with OpenShell), uses `expectWorkspaceCreated()` to catch create error dialogs.
 
-**Test IDs:** Scenario in describe title (`FS-NONE-NET-DEVELOPER`); steps as `[01] creation` … `[05] removal`. Skips: `[SKIP] FS-FULL-NET-DEVELOPER — …`. Filter: `--grep FS-NONE-NET-DEVELOPER` or `--grep "\\[01\\] creation"`.
+**Test IDs:** Scenario in describe title (`FS-NONE-NET-DEVELOPER`); steps as `[01] creation` … `[06] removal`, with `[05] sandbox policy enforced` checking network access and mounts from the Shell Terminal. Skips: `[SKIP] FS-FULL-NET-DEVELOPER — …`. Filter: `--grep FS-NONE-NET-DEVELOPER` or `--grep "\\[01\\] creation"`.
 
 `workspace-filesystem-network-smoke.spec.ts` defines scenarios × agents (OpenCode + Claude Code). Skipped scenarios emit 1 skip-marker test instead of 5 steps — use `--list | tail -1` for the current count.
 
@@ -211,7 +211,7 @@ Agent lifecycle specs use `@workspace-provider` only.
 
 Most scenarios pass; full-system and unrestricted scenarios are skipped (see [Skip Conditions](#skip-conditions)). Use `--list | tail -1` for the current total.
 
-**Report hierarchy (HTML):** `OpenCode` → `FS-NONE-NET-DEVELOPER` → `[01] creation` … `[05] removal` (no duplicated scenario ID in step titles).
+**Report hierarchy (HTML):** `OpenCode` → `FS-NONE-NET-DEVELOPER` → `[01] creation` … `[06] removal`, with `[05] sandbox policy enforced` checking network access and mounts from the Shell Terminal (no duplicated scenario ID in step titles).
 
 **Terminal output:** When running in GitHub Actions workspace e2e workflow, the compact list reporter prints only `test.title` — no truncation:
 

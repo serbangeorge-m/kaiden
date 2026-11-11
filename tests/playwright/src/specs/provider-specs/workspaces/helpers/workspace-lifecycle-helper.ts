@@ -19,7 +19,7 @@
  * See .agents/skills/playwright-testing/workspace-provider-e2e.md
  ***********************************************************************/
 
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -30,6 +30,7 @@ import {
   type CodingAgent,
   FILE_ACCESS_LEVEL,
   type FileAccessLevel,
+  NETWORK_ACCESS_LEVEL,
   type NetworkAccessLevel,
   PROVIDERS,
   type ResourceId,
@@ -78,8 +79,15 @@ const SANDBOX_STEP_TITLES: Record<string, string> = {
   '02': '[02] running status check',
   '03': '[03] terminal navigation',
   '04': '[04] terminal prompt response',
-  '05': '[05] removal',
+  '05': '[05] sandbox policy enforced',
+  '06': '[06] removal',
 };
+
+/** Allowed by the Developer Preset, blocked by Deny All. */
+const PRESET_REGISTRY_HOST = 'registry.npmjs.org';
+/** Never allowed by any scenario: must stay blocked. */
+const BLOCKED_PROBE_HOST = 'example.com';
+const SOURCES_PREFIX = '$SOURCES/';
 
 function sandboxStepTitle(step: string): string {
   return SANDBOX_STEP_TITLES[step] ?? `[${step}] ${step}`;
@@ -112,10 +120,12 @@ export function registerWorkspaceLifecycleTests(
 
   let workingDir: string | undefined;
   let mountDirs: string[] = [];
+  /** Host folder of each custom mount: a temp dir for an empty host, `$SOURCES/...` under the project folder. */
+  let mountHostPaths: string[] = [];
   let countsBefore: { activeSessions: number; totalSessions: number; configuredAgents: number };
 
   const steps = hasSandbox
-    ? { terminal: '03', prompt: '04', remove: '05' }
+    ? { terminal: '03', prompt: '04', remove: '06' }
     : { statAfterCreate: '03', terminal: '04', prompt: '05', remove: '06', statAfterRemove: '07' };
 
   const manageResource = config.manageResource !== false;
@@ -145,9 +155,16 @@ export function registerWorkspaceLifecycleTests(
         mount.host === '' ? mkdtempSync(join(homedir(), '.kdn-e2e-mount-')) : '',
       );
 
-      for (const mount of config.sandbox!.customMounts) {
-        if (mount.host.startsWith('$SOURCES/')) {
-          mkdirSync(join(workingDir!, mount.host.slice('$SOURCES/'.length)), { recursive: true });
+      mountHostPaths = config.sandbox!.customMounts.map((mount, index) => {
+        if (mount.host === '') return mountDirs[index] ?? '';
+        if (mount.host.startsWith(SOURCES_PREFIX) && workingDir) {
+          return join(workingDir, mount.host.slice(SOURCES_PREFIX.length));
+        }
+        return mount.host;
+      });
+      for (const [index, mount] of config.sandbox!.customMounts.entries()) {
+        if (mount.host.startsWith(SOURCES_PREFIX)) {
+          mkdirSync(mountHostPaths[index] ?? '', { recursive: true });
         }
       }
     }
@@ -299,6 +316,84 @@ export function registerWorkspaceLifecycleTests(
     },
   );
 
+  const sandbox = config.sandbox;
+  if (sandbox) {
+    test(
+      lifecycleStepTitle(config, '05', 'Sandbox policy is enforced'),
+      async ({ navigationBar, agentWorkspacesPage }) => {
+        await navigationBar.navigateToWorkspacesPage();
+        // the network policy is applied at the end of creation, after the workspace already shows Running
+        await agentWorkspacesPage.waitForCreationTask(config.workspaceName);
+        const detailsPage = await agentWorkspacesPage.openWorkspaceDetails(config.workspaceName);
+        const shell = await detailsPage.openShellTerminalTab();
+        await shell.waitForTerminalContent(/\$\s*$/m, TIMEOUTS.STANDARD);
+
+        // whether a host answers from inside the sandbox; curl reports HTTP 000 when the connection is refused
+        let probe = 0;
+        const reachability = async (host: string): Promise<'reachable' | 'blocked'> => {
+          const tag = `HTTP${probe++}`;
+          const match = await shell.runShellCommand(
+            `curl -s -o /dev/null -m 8 -w '${tag}=%{http_code}\\n' https://${host}`,
+            new RegExp(`${tag}=(\\d{3})`),
+          );
+          return match[1] === '000' ? 'blocked' : 'reachable';
+        };
+
+        const registryExpected = sandbox.network === NETWORK_ACCESS_LEVEL.DEVELOPER_PRESET ? 'reachable' : 'blocked';
+        expect(await reachability(PRESET_REGISTRY_HOST), `${PRESET_REGISTRY_HOST} with ${sandbox.network}`).toBe(
+          registryExpected,
+        );
+        expect(await reachability(BLOCKED_PROBE_HOST), `${BLOCKED_PROBE_HOST} (allowed by no scenario)`).toBe(
+          'blocked',
+        );
+        for (const host of [...(sandbox.denyHosts ?? []), ...(sandbox.additionalHosts ?? [])]) {
+          expect(await reachability(host), `${host} (allowed by this scenario)`).toBe('reachable');
+        }
+
+        if (sandbox.fileAccess !== FILE_ACCESS_LEVEL.CUSTOM_PATHS) {
+          return;
+        }
+        for (const [index, mount] of (sandbox.customMounts ?? []).entries()) {
+          const hostPath = mountHostPaths[index] ?? '';
+          // a target defaults to the host path when omitted
+          const sandboxPath = mount.target ? resolveSandboxTarget(mount.target) : hostPath;
+
+          // host → sandbox: a file created on the host after creation is visible through the mount
+          const fromHost = `from-host-${index}.txt`;
+          writeFileSync(join(hostPath, fromHost), 'qe');
+          const visible = await shell.runShellCommand(
+            `test -f '${sandboxPath}/${fromHost}' && printf 'R${index}=%s\\n' yes || printf 'R${index}=%s\\n' no`,
+            new RegExp(`R${index}=(yes|no)`),
+          );
+          const mountLabel = `mount ${index} (${hostPath} → ${sandboxPath})`;
+          expect(
+            visible[1] === 'yes' ? 'visible in sandbox' : 'missing in sandbox',
+            `${mountLabel}: file created on the host after creation (missing = folder copied, not mounted)`,
+          ).toBe('visible in sandbox');
+
+          // sandbox → host: writes are denied on read-only mounts and reach the host on read-write ones
+          const fromSandbox = `from-sandbox-${index}.txt`;
+          const write = await shell.runShellCommand(
+            `touch '${sandboxPath}/${fromSandbox}' 2>/dev/null && printf 'W${index}=%s\\n' ok || printf 'W${index}=%s\\n' denied`,
+            new RegExp(`W${index}=(ok|denied)`),
+          );
+          const writeOutcome = write[1] === 'ok' ? 'write allowed' : 'write denied';
+          if (mount.readOnly) {
+            expect(writeOutcome, `${mountLabel}: write from the sandbox to a read-only mount`).toBe('write denied');
+          } else {
+            expect(writeOutcome, `${mountLabel}: write from the sandbox to a read-write mount`).toBe('write allowed');
+            await expect
+              .poll(() => (existsSync(join(hostPath, fromSandbox)) ? 'on host' : 'missing on host'), {
+                timeout: TIMEOUTS.SHORT,
+                message: `${mountLabel}: file written in the sandbox`,
+              })
+              .toBe('on host');
+          }
+        }
+      },
+    );
+  }
+
   test(
     lifecycleStepTitle(config, steps.remove, 'Removes the workspace'),
     async ({ navigationBar, agentWorkspacesPage }) => {
@@ -320,4 +415,9 @@ export function registerWorkspaceLifecycleTests(
       });
     });
   }
+}
+
+/** Path inside the sandbox of a mount target; `$SOURCES/...` targets live under /sandbox. */
+function resolveSandboxTarget(target: string): string {
+  return target.startsWith(SOURCES_PREFIX) ? `/sandbox/${target.slice(SOURCES_PREFIX.length)}` : target;
 }

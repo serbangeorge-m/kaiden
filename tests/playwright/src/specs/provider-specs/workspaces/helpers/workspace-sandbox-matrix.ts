@@ -36,7 +36,8 @@ import { registerWorkspaceLifecycleTests } from './workspace-lifecycle-helper';
 export const CUSTOM_MOUNT_TARGET = '$SOURCES/e2e-custom';
 export const CUSTOM_MOUNT_TARGET_2 = '$SOURCES/e2e-custom-2';
 export const CUSTOM_MOUNT_DEFAULT_HOST = '$SOURCES/e2e-default';
-export const CUSTOM_ALLOWED_HOST = 'api.example.com';
+/** Must resolve and answer on the open internet, so the policy checks can show it as reachable. */
+export const CUSTOM_ALLOWED_HOST = 'example.org';
 
 function skipTestTitle(scenarioId: string, skipReason: string): string {
   return `[SKIP] ${scenarioId} — ${skipReason}`;

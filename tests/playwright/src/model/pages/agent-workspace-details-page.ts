@@ -27,6 +27,7 @@ export class AgentWorkspaceDetailsPage extends BasePage {
   readonly header: Locator;
   readonly pageTabsRegion: Locator;
   readonly terminalTabLink: Locator;
+  readonly shellTerminalTabLink: Locator;
   readonly removeButton: Locator;
 
   constructor(page: Page) {
@@ -34,6 +35,7 @@ export class AgentWorkspaceDetailsPage extends BasePage {
     this.header = this.page.getByRole('region', { name: 'header' });
     this.pageTabsRegion = this.page.getByRole('region', { name: 'Tabs' });
     this.terminalTabLink = this.pageTabsRegion.getByRole('link', { name: `Agent's Terminal`, exact: true });
+    this.shellTerminalTabLink = this.pageTabsRegion.getByRole('link', { name: 'Shell Terminal', exact: true });
     this.removeButton = this.header.getByRole('button', { name: 'Remove Workspace' });
   }
 
@@ -44,6 +46,10 @@ export class AgentWorkspaceDetailsPage extends BasePage {
 
   async openTerminalTab(): Promise<AgentWorkspaceTerminalPage> {
     return this.openTab(this.terminalTabLink, AgentWorkspaceTerminalPage);
+  }
+
+  async openShellTerminalTab(): Promise<AgentWorkspaceTerminalPage> {
+    return this.openTab(this.shellTerminalTabLink, AgentWorkspaceTerminalPage);
   }
 
   getTerminalPage(): AgentWorkspaceTerminalPage {
