@@ -61,12 +61,13 @@ jobs:
         # 'cloud-providers' runs the cloud-provider scenarios; 'ollama' and
         # 'ramalama' run only their scenarios against a local server, each kept
         # apart because a running local runtime changes the models the wizard
-        # offers. filesystem-network has no local-runtime scenario and goose's
-        # are skipped (Ollama: https://github.com/openkaiden/kaiden/issues/1780;
-        # RamaLama: out of scope for 0.5.0), so they run the cloud-providers leg
-        # only. The whole matrix is one JSON value because a static include entry
-        # would re-add the local legs for those targets.
-        include: ${{ fromJSON(contains(fromJSON('["test:e2e:workspaces:filesystem-network","test:e2e:workspaces:goose"]'), inputs.npm_target) && '[{"inference":"cloud-providers"}]' || '[{"inference":"cloud-providers"},{"inference":"ollama","ollama_model":"granite3.2:2b"},{"inference":"ramalama","ramalama_model":"granite3.2:2b"}]') }}
+        # offers. goose's local-runtime scenarios are skipped (Ollama:
+        # https://github.com/openkaiden/kaiden/issues/1780; RamaLama: out of
+        # scope for 0.5.0), so it runs the cloud-providers leg only;
+        # filesystem-network has no RamaLama scenario, so it skips that leg. The
+        # whole matrix is one JSON value because a static include entry would
+        # re-add the local legs for those targets.
+        include: ${{ fromJSON(inputs.npm_target == 'test:e2e:workspaces:goose' && '[{"inference":"cloud-providers"}]' || inputs.npm_target == 'test:e2e:workspaces:filesystem-network' && '[{"inference":"cloud-providers"},{"inference":"ollama","ollama_model":"granite3.2:2b"}]' || '[{"inference":"cloud-providers"},{"inference":"ollama","ollama_model":"granite3.2:2b"},{"inference":"ramalama","ramalama_model":"granite3.2:2b"}]') }}
     # Run only on the upstream repo: forks lack TEST_FARM_TOKEN and the
     # openkaiden/* allow-list means a fork dispatch could only test upstream
     # code anyway, so it could only fail.

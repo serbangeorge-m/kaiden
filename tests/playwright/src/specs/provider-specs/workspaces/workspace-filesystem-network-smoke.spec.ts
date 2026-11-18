@@ -52,6 +52,21 @@ const AGENT_SETUPS: SandboxAgentSetup[] = [
     },
   },
   {
+    testIdBase: 'OLLAMA',
+    // Title must contain 'with Ollama model': the Testing Farm ollama leg greps for it.
+    describeAgent: 'OpenCode with Ollama model',
+    agent: CODING_AGENT.OPENCODE,
+    requiredResource: 'ollama',
+    workspacePrefix: 'ollama',
+    selectModel: async createPage => createPage.searchAndSelectByRuntime('ollama', 'Ollama'),
+    terminalReadyPatterns: TERMINAL_READY_PATTERNS.OPENCODE,
+    promptTimeout: 120_000,
+    promptTest: {
+      prompt: 'what is 123+456? reply with just the number',
+      expectedResponse: /579/,
+    },
+  },
+  {
     testIdBase: 'CLAUDE',
     describeAgent: 'Claude Code',
     agent: CODING_AGENT.CLAUDE,
