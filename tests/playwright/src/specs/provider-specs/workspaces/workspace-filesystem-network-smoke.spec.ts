@@ -52,6 +52,21 @@ const AGENT_SETUPS: SandboxAgentSetup[] = [
     },
   },
   {
+    testIdBase: 'RAMALAMA',
+    // Title must contain 'with RamaLama model': the Testing Farm ramalama leg greps for it.
+    describeAgent: 'OpenCode with RamaLama model',
+    agent: CODING_AGENT.OPENCODE,
+    requiredResource: 'ramalama',
+    workspacePrefix: 'ramalama',
+    selectModel: async createPage => createPage.searchAndSelectByRuntime('ramalama', 'RamaLama'),
+    terminalReadyPatterns: TERMINAL_READY_PATTERNS.OPENCODE,
+    promptTimeout: 120_000,
+    promptTest: {
+      prompt: 'what is 123+456? reply with just the number',
+      expectedResponse: /579/,
+    },
+  },
+  {
     testIdBase: 'CLAUDE',
     describeAgent: 'Claude Code',
     agent: CODING_AGENT.CLAUDE,

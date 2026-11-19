@@ -174,7 +174,7 @@ tests/playwright/src/specs/provider-specs/workspaces/
 
 **Test IDs:** Scenario in describe title (`FS-NONE-NET-DEVELOPER`); steps as `[01] creation` … `[05] removal`. Skips: `[SKIP] FS-FULL-NET-DEVELOPER — …`. Filter: `--grep FS-NONE-NET-DEVELOPER` or `--grep "\\[01\\] creation"`.
 
-`workspace-filesystem-network-smoke.spec.ts` defines scenarios × agents (OpenCode + Claude Code). Skipped scenarios emit 1 skip-marker test instead of 5 steps — use `--list | tail -1` for the current count.
+`workspace-filesystem-network-smoke.spec.ts` defines scenarios × agents (OpenCode with OpenAI, OpenCode with RamaLama, Claude Code). Skipped scenarios emit 1 skip-marker test instead of 5 steps — use `--list | tail -1` for the current count.
 
 Inference resources (e.g. OpenAI, Claude) are created **once per agent** in `registerSandboxMatrixTests` (`beforeAll` / `afterAll` on the agent describe). Scenario lifecycle hooks pass `manageResource: false` so they do not recreate/delete the connection between scenarios.
 

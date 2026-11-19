@@ -90,6 +90,8 @@ export interface SandboxAgentSetup {
   workspacePrefix: string;
   selectModel: (createPage: AgentWorkspaceCreatePage) => Promise<string | undefined>;
   terminalReadyPatterns: readonly RegExp[];
+  /** Defaults to TIMEOUTS.MODEL_RESPONSE. */
+  promptTimeout?: number;
   promptTest: {
     prompt: string;
     expectedResponse: RegExp;
@@ -249,7 +251,7 @@ export function registerSandboxMatrixTests(
             manageResource: false,
             selectModel: agent.selectModel,
             terminalReadyPatterns: agent.terminalReadyPatterns,
-            promptTimeout: TIMEOUTS.MODEL_RESPONSE,
+            promptTimeout: agent.promptTimeout ?? TIMEOUTS.MODEL_RESPONSE,
             promptTest: agent.promptTest,
             sandbox: {
               fileAccess: scenario.fileAccess,
