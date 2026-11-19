@@ -55,8 +55,42 @@ export class SettingsModelsPage extends BasePage {
     await expect(this.modelsRegion.getByText(MODEL_CATEGORIES[category], { exact: true })).toBeVisible();
   }
 
-  getModelRow(label: string): Locator {
-    return this.modelsTable.getByRole('row').filter({ has: this.page.getByTitle(label, { exact: true }) });
+  // A model row. Pass providerName to match only that provider's row (its Runtime cell carries the name as a title).
+  getModelRow(label: string, providerName?: string): Locator {
+    const row = this.modelsTable.getByRole('row').filter({ has: this.page.getByTitle(label, { exact: true }) });
+    return providerName ? row.filter({ has: this.page.getByTitle(providerName, { exact: true }) }) : row;
+  }
+
+  // Model names listed for one provider, in table order. Cells are located by column header because
+  // other columns (e.g. Status) also carry title attributes.
+  async getModelLabels(providerName: string): Promise<string[]> {
+    return this.modelsTable.evaluate((table, provider) => {
+      const headers = Array.from(table.querySelectorAll('[role="columnheader"]'), header =>
+        header.textContent?.trim().toLowerCase(),
+      );
+      const nameIndex = headers.indexOf('name');
+      const runtimeIndex = headers.indexOf('runtime');
+      const labels: string[] = [];
+      for (const row of table.querySelectorAll('[role="row"]')) {
+        const cells = row.querySelectorAll('[role="cell"]');
+        const label = cells[nameIndex]?.querySelector('[title]')?.getAttribute('title');
+        const runtime = cells[runtimeIndex]?.querySelector('[title]')?.getAttribute('title');
+        if (label && runtime === provider) {
+          labels.push(label);
+        }
+      }
+      return labels;
+    }, providerName);
+  }
+
+  // Provider connection cards have no accessible role; match the card by its provider name.
+  getProviderCard(providerName: string): Locator {
+    return this.page.locator('.provider-tile').filter({ has: this.page.getByText(providerName, { exact: true }) });
+  }
+
+  // Status badge on a provider card, e.g. 'Connected' or 'Not configured'.
+  getProviderCardStatus(providerName: string, status: string): Locator {
+    return this.getProviderCard(providerName).getByText(status, { exact: true });
   }
 
   async search(term: string): Promise<void> {
