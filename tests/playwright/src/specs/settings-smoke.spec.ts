@@ -128,6 +128,37 @@ test.describe('Settings page navigation', { tag: '@smoke' }, () => {
       await preferencesPage.clearSearch();
     }
   });
+
+  // Cloud providers show a connection card even without an API key, so this runs on every PR.
+  test('[SET-10] Models catalog search filters LLM provider cards', async ({ settingsPage }) => {
+    const modelsPage = await settingsPage.openModels();
+    await modelsPage.selectCategory('LLM Providers');
+    const gemini = modelsPage.getProviderCard('Gemini');
+    const openai = modelsPage.getProviderCard('OpenAI');
+    await expect(gemini).toBeVisible();
+    await expect(openai).toBeVisible();
+
+    // Cards match on provider name plus connection type; 'cloud gemini' needs both fields, in reverse order.
+    for (const query of ['gemini', 'cloud gemini', 'cloud_gemini']) {
+      await test.step(`'${query}' keeps Gemini and hides OpenAI`, async () => {
+        await modelsPage.search(query);
+        await expect(gemini).toBeVisible();
+        await expect(openai).toBeHidden();
+      });
+    }
+
+    await test.step(`'gemini nomatch-e2e' matches nothing`, async () => {
+      await modelsPage.search('gemini nomatch-e2e');
+      await expect(modelsPage.filteredEmptyMessage).toBeVisible();
+      await expect(gemini).toBeHidden();
+    });
+
+    await test.step('clearing the search restores the cards', async () => {
+      await modelsPage.clearSearch();
+      await expect(gemini).toBeVisible();
+      await expect(openai).toBeVisible();
+    });
+  });
 });
 
 isolatedTest.describe('Settings - onboarding restart', { tag: '@smoke' }, () => {
